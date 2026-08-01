@@ -1,0 +1,59 @@
+# SwiftLint configuration for Kontinuity
+# Docs: https://realm.github.io/SwiftLint/rule-directory.html
+# Run via `make lint` (CI and local use the same target).
+
+included:
+  - Kontinuity
+  - KontinuityCore/Sources
+  - KontinuityTests
+
+excluded:
+  - .build
+  - KontinuityCore/.build
+  - DerivedData
+  - build
+  - "**/.build"
+
+# Treat every violation as an error in CI via `--strict` (see Makefile),
+# so warnings can't silently pile up.
+
+opt_in_rules:
+  - closure_spacing
+  - contains_over_first_not_nil
+  - empty_count
+  - empty_string
+  - first_where
+  - last_where
+  - sorted_first_last
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - redundant_nil_coalescing
+  - explicit_init
+  - joined_default_parameter
+
+disabled_rules:
+  - todo               # keep TODO/FIXME notes as working memory aids
+  - type_body_length   # not useful in practice; big enums/structs are fine
+
+line_length:
+  warning: 120
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+
+identifier_name:
+  min_length: 2          # allow short, intentional names
+  excluded: [id, x, y, w, h, dx, dy, n, to, at]
+
+type_name:
+  min_length: 3
+  max_length: 50
+
+# Generated SwiftUI bodies and previews can run long; keep these humane.
+function_body_length:
+  warning: 80
+  error: 150
+
+file_length:
+  warning: 500
+  error: 800

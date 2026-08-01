@@ -1,0 +1,37 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast, reliable gate: the Swift Testing unit suite must pass.
+  unit:
+    name: Unit tests
+    # Kontinuity targets the iOS 26 SDK, which needs Xcode 26 (macOS 26).
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      # The runner image's iPad lineup drifts between releases, so resolve a
+      # real device name instead of hardcoding one that may not exist.
+      - name: Pick an iPad simulator
+        id: sim
+        run: |
+          name=$(xcrun simctl list devices available \
+            | grep -oE 'iPad[^(]*' | head -1 | sed 's/ *$//')
+          echo "Using simulator: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests
+        run: make test-unit SIMULATOR_NAME="${{ steps.sim.outputs.name }}"

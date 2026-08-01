@@ -60,3 +60,13 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Design docs — local only, never committed
+.claude/
+
+# Build output from `make deploy` / `make ipa`
+build/
+DerivedData/
+
+# Per-machine Makefile overrides (DEVICE_ID etc.)
+Makefile.local

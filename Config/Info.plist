@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Xcode merges its generated Info.plist keys into this file
+	  (GENERATE_INFOPLIST_FILE = YES + INFOPLIST_FILE = Config/Info.plist), so
+	  only the keys that can't be expressed as INFOPLIST_KEY_* build settings
+	  live here. Both entries below exist because Komga is self-hosted.
+	-->
+
+	<!--
+	  Komga typically runs on a LAN box over plain HTTP (http://10.0.0.x:25600)
+	  with no certificate. NSAllowsLocalNetworking permits cleartext to local
+	  addresses only — it does NOT open up arbitrary internet HTTP, which is the
+	  right trade. A server reached over the internet still has to be HTTPS.
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+
+	<!--
+	  iOS gates direct connections to LAN addresses behind the local network
+	  permission prompt. Without this string the app is denied silently and
+	  every request to a home server fails with an opaque error.
+	-->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Kontinuity connects to your Komga server on your local network to browse and download your library.</string>
+</dict>
+</plist>

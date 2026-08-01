@@ -1,0 +1,132 @@
+# Kontinuity — task runner.
+# CI workflows call these same targets, so `make <x>` behaves identically
+# locally and in GitHub Actions. Run `make` (or `make help`) for the list.
+
+# Per-machine overrides (e.g. DEVICE_ID) live here — gitignored, never committed.
+# Copy Makefile.local.example to Makefile.local and fill it in. The `-` makes
+# the include silent when the file is absent (CI doesn't need it).
+-include Makefile.local
+
+PROJECT        := Kontinuity.xcodeproj
+SCHEME         := Kontinuity
+UNIT_TARGET    := KontinuityTests
+
+# Simulator destination. The iPad is the primary target — iPhone support comes
+# later (see .claude/PLAN.md phase 7), so the default sim is an iPad.
+SIMULATOR_NAME ?= iPad Pro 13-inch (M5)
+# arch=arm64 pins the native slice so xcodebuild doesn't warn about matching
+# both the arm64 and x86_64/Rosetta slice of the same simulator.
+DESTINATION    ?= platform=iOS Simulator,name=$(SIMULATOR_NAME),arch=arm64
+
+# On-device deploy (free Apple ID). Apps signed by a free Personal Team stop
+# launching after 7 days, so re-run `make deploy` weekly with the iPad plugged
+# in (or paired over Wi-Fi). DEVICE_ID comes from `xcrun devicectl list devices`
+# — set it in Makefile.local (or `make deploy DEVICE_ID=...`).
+APP_NAME       ?= Kontinuity
+DEVICE_CONFIG  ?= Debug
+DEVICE_DERIVED ?= build/device
+DEVICE_ID      ?=
+DEVICE_APP     := $(DEVICE_DERIVED)/Build/Products/$(DEVICE_CONFIG)-iphoneos/$(APP_NAME).app
+
+# Free Personal Team provisioning profiles expire 7 days after they're *created*,
+# not after they're deployed. `-allowProvisioningUpdates` reuses a cached profile
+# while it's still valid, so a mid-week deploy re-signs with a profile whose clock
+# already started — the app dies 7 days after the FIRST deploy of the cycle. We
+# delete our cached profiles before each deploy so Xcode mints fresh ones with a
+# full 7-day window. Only profiles matching BUNDLE_PREFIX are touched.
+PROFILE_DIR    := $(HOME)/Library/Developer/Xcode/UserData/Provisioning Profiles
+BUNDLE_PREFIX  ?= org.mattnitzken.Kontinuity
+
+XCODEBUILD     := xcodebuild
+# Pretty-print xcodebuild output when xcbeautify is installed; otherwise raw.
+FORMATTER      := $(shell command -v xcbeautify >/dev/null 2>&1 && echo "| xcbeautify" || echo "")
+
+.DEFAULT_GOAL := help
+
+## help: list available targets
+.PHONY: help
+help:
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## //' | awk -F': ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+## install-tools: install SwiftLint + SwiftFormat (via Homebrew)
+.PHONY: install-tools
+install-tools:
+	brew install swiftlint swiftformat xcbeautify
+
+## install-hooks: enable the repo's git pre-commit hook
+.PHONY: install-hooks
+install-hooks:
+	git config core.hooksPath .githooks
+	@echo "pre-commit hook enabled (lint + format-check)."
+
+## lint: run SwiftLint (strict — warnings fail)
+.PHONY: lint
+lint:
+	swiftlint lint --strict
+
+## format: rewrite sources with SwiftFormat
+.PHONY: format
+format:
+	swiftformat .
+
+## format-check: verify formatting without rewriting (used in CI)
+.PHONY: format-check
+format-check:
+	swiftformat --lint .
+
+## build: build the app for the simulator
+.PHONY: build
+build:
+	set -o pipefail; $(XCODEBUILD) build \
+		-project $(PROJECT) -scheme $(SCHEME) \
+		-destination '$(DESTINATION)' $(FORMATTER)
+
+## deploy: re-sign + install to the iPad over cable/Wi-Fi (weekly 7-day refresh)
+.PHONY: deploy
+deploy:
+	@test -n "$(DEVICE_ID)" || { echo "DEVICE_ID is unset. Set it in Makefile.local (copy Makefile.local.example) or pass DEVICE_ID=... — find it via 'xcrun devicectl list devices'."; exit 1; }
+	@echo "Purging cached provisioning profiles for $(BUNDLE_PREFIX) so a fresh 7-day profile is minted…"
+	@if [ -d "$(PROFILE_DIR)" ]; then \
+		for f in "$(PROFILE_DIR)"/*.mobileprovision; do \
+			[ -e "$$f" ] || continue; \
+			if security cms -D -i "$$f" 2>/dev/null | grep -q "$(BUNDLE_PREFIX)"; then \
+				rm -f "$$f" && echo "  removed $$(basename "$$f")"; \
+			fi; \
+		done; \
+	fi
+	set -o pipefail; $(XCODEBUILD) build \
+		-project $(PROJECT) -scheme $(SCHEME) \
+		-configuration $(DEVICE_CONFIG) \
+		-destination 'generic/platform=iOS' \
+		-allowProvisioningUpdates \
+		-derivedDataPath $(DEVICE_DERIVED) $(FORMATTER)
+	xcrun devicectl device install app --device $(DEVICE_ID) "$(DEVICE_APP)"
+	@echo "Installed $(APP_NAME) — good for ~7 days. Re-run \`make deploy\` to refresh."
+
+## ipa: package an unsigned .ipa for SideStore/AltStore (which auto-refreshes)
+.PHONY: ipa
+ipa:
+	set -o pipefail; $(XCODEBUILD) build \
+		-project $(PROJECT) -scheme $(SCHEME) \
+		-configuration $(DEVICE_CONFIG) \
+		-destination 'generic/platform=iOS' \
+		CODE_SIGNING_ALLOWED=NO \
+		-derivedDataPath $(DEVICE_DERIVED) $(FORMATTER)
+	rm -rf build/ipa && mkdir -p build/ipa/Payload
+	cp -R "$(DEVICE_APP)" build/ipa/Payload/
+	cd build/ipa && zip -qry ../$(APP_NAME).ipa Payload
+	@echo "Wrote build/$(APP_NAME).ipa — import it into SideStore/AltStore once."
+
+## test-unit: run Swift Testing unit tests (the CI gate)
+.PHONY: test-unit test
+test-unit test:
+	set -o pipefail; $(XCODEBUILD) test \
+		-project $(PROJECT) -scheme $(SCHEME) \
+		-destination '$(DESTINATION)' \
+		-only-testing:$(UNIT_TARGET) $(FORMATTER)
+
+## clean: remove build artifacts
+.PHONY: clean
+clean:
+	$(XCODEBUILD) clean -project $(PROJECT) -scheme $(SCHEME)
+	rm -rf .build KontinuityCore/.build build

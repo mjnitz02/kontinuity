@@ -1,0 +1,8 @@
+# Copy to Makefile.local (gitignored) and fill in for this machine.
+#
+# Find your iPad's identifier with:
+#   xcrun devicectl list devices
+DEVICE_ID = 00000000-0000000000000000
+
+# Optional: override the simulator used by `make build` / `make test-unit`.
+# SIMULATOR_NAME = iPad Pro 11-inch (M5)

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Enabled via `make install-hooks` (sets core.hooksPath to .githooks).
+# Runs the same two checks CI runs, so a red build never leaves the machine.
+set -e
+make format-check
+make lint
