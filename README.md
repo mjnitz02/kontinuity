@@ -40,10 +40,31 @@ above.
 make install-tools     # swiftlint, swiftformat, xcbeautify
 make install-hooks     # pre-commit: format-check + lint
 make build             # build for the iPad simulator
-make test-unit         # the CI gate
+make test-unit         # the CI gate — hermetic, no server needed
 make format            # rewrite sources
 make lint              # strict — warnings fail
 ```
+
+### Testing against a real Komga
+
+`make test-unit` never touches the network. To also run the tests that talk to a
+live server, point `Makefile.local` at one (copy `Makefile.local.example`) and:
+
+```sh
+make komga-up          # start a local Komga in docker
+make komga-check       # verify it's reachable and the credentials work
+make komga-address     # what to type on the connect screen
+make test-integration  # unit tests + the live-server suite
+make komga-stop
+```
+
+The live suite skips itself when `KOMGA_URL`/`KOMGA_API_KEY` are unset, so CI and a
+fresh clone stay green without Docker. Credentials live only in `Makefile.local`,
+which is gitignored.
+
+A disposable instance to point this at:
+[komga-docker](https://github.com/gotson/komga#docker) — a single container bind-mounting
+a config and a library directory does the job.
 
 Deploying to a real iPad with a free Apple ID:
 

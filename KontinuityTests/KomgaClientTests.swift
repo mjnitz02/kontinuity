@@ -143,16 +143,40 @@ struct KomgaClientTests {
 
 @Suite("Komga date parsing")
 struct KomgaDateTests {
+    /// Every case asserts the resulting *instant*, not merely that parsing
+    /// returned non-nil. A date parser that drops a fraction or mishandles an
+    /// offset still returns a perfectly good `Date` — just the wrong one — and
+    /// phase 4 resolves sync conflicts by comparing these values.
+    ///
+    /// Reference instant throughout: 2026-08-02T10:15:30Z.
     @Test("parses the formats Komga emits", arguments: [
-        "2026-08-02T10:15:30Z",
-        "2026-08-02T10:15:30.123Z",
-        "2026-08-02T10:15:30+02:00",
-        "2026-08-02T10:15:30.123456+02:00",
-        "2026-08-02T10:15:30",
-        "2026-08-02T10:15:30.123456789"
+        // Plain, and the millisecond form ISO8601DateFormatter handles natively.
+        ("2026-08-02T10:15:30Z", 0.0),
+        ("2026-08-02T10:15:30.000Z", 0.0),
+        ("2026-08-02T10:15:30.250Z", 0.25),
+        // Nanosecond precision — what Komga 1.25 actually sends for createdDate.
+        ("2026-08-02T10:15:30.858195884Z", 0.858),
+        // Fewer than three digits must pad, not be read as milliseconds.
+        ("2026-08-02T10:15:30.5Z", 0.5),
+        ("2026-08-02T10:15:30.05Z", 0.05),
+        // Offsets must survive fraction rescaling: 12:15:30+02:00 == 10:15:30Z.
+        ("2026-08-02T12:15:30+02:00", 0.0),
+        ("2026-08-02T12:15:30.858195884+02:00", 0.858),
+        ("2026-08-02T08:15:30.123456-02:00", 0.123),
+        // LocalDateTime — no offset at all, which Komga stores as UTC.
+        ("2026-08-02T10:15:30", 0.0),
+        ("2026-08-02T10:15:30.123456789", 0.0)
     ])
-    func parsesKnownFormats(raw: String) {
-        #expect(KomgaDate.parse(raw) != nil, "failed to parse \(raw)")
+    func parsesKnownFormats(raw: String, fractionalSeconds: Double) throws {
+        let reference = try #require(DateComponents(
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0),
+            year: 2026, month: 8, day: 2, hour: 10, minute: 15, second: 30
+        ).date)
+
+        let parsed = try #require(KomgaDate.parse(raw), "failed to parse \(raw)")
+        let expected = reference.addingTimeInterval(fractionalSeconds)
+        #expect(abs(parsed.timeIntervalSince(expected)) < 0.002, "\(raw) parsed as \(parsed)")
     }
 
     @Test("round-trips a date through the progression format")

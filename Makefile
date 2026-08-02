@@ -37,6 +37,18 @@ DEVICE_APP     := $(DEVICE_DERIVED)/Build/Products/$(DEVICE_CONFIG)-iphoneos/$(A
 PROFILE_DIR    := $(HOME)/Library/Developer/Xcode/UserData/Provisioning Profiles
 BUNDLE_PREFIX  ?= org.mattnitzken.Kontinuity
 
+# Local Komga instance for testing (see ~/workspaces/komga-docker). Credentials
+# live in Makefile.local, never here — this file is committed. `komga-check`
+# degrades gracefully when they're unset.
+KOMGA_DIR      ?= $(HOME)/workspaces/komga-docker
+KOMGA_URL      ?= http://localhost:25600
+KOMGA_EMAIL    ?=
+KOMGA_PASSWORD ?=
+KOMGA_API_KEY  ?=
+# Separate derived-data root: the .xctestrun there gets credentials injected,
+# so it must not be the tree `make build` / `make test-unit` share.
+INTEGRATION_DERIVED ?= build/integration
+
 XCODEBUILD     := xcodebuild
 # Pretty-print xcodebuild output when xcbeautify is installed; otherwise raw.
 FORMATTER      := $(shell command -v xcbeautify >/dev/null 2>&1 && echo "| xcbeautify" || echo "")
@@ -46,7 +58,7 @@ FORMATTER      := $(shell command -v xcbeautify >/dev/null 2>&1 && echo "| xcbea
 ## help: list available targets
 .PHONY: help
 help:
-	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## //' | awk -F': ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^## ' $(MAKEFILE_LIST) | sed 's/## //' | awk -F': ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 ## install-tools: install SwiftLint + SwiftFormat (via Homebrew)
 .PHONY: install-tools
@@ -122,6 +134,97 @@ ipa:
 test-unit test:
 	set -o pipefail; $(XCODEBUILD) test \
 		-project $(PROJECT) -scheme $(SCHEME) \
+		-destination '$(DESTINATION)' \
+		-only-testing:$(UNIT_TARGET) $(FORMATTER)
+
+## komga-up: start the local Komga test instance (docker)
+.PHONY: komga-up
+komga-up:
+	@test -d "$(KOMGA_DIR)" || { echo "KOMGA_DIR not found: $(KOMGA_DIR). Set it in Makefile.local."; exit 1; }
+	$(MAKE) -C "$(KOMGA_DIR)" up
+	@printf "waiting for Komga to answer /actuator/health"
+	@for i in $$(seq 1 60); do \
+		if curl -fsS -m 2 "$(KOMGA_URL)/actuator/health" >/dev/null 2>&1; then \
+			echo " — up."; exit 0; \
+		fi; \
+		printf "."; sleep 2; \
+	done; \
+	echo " — timed out. Try 'make komga-logs'."; exit 1
+
+## komga-down: stop and remove the local Komga container (data/ is kept)
+.PHONY: komga-down
+komga-down:
+	$(MAKE) -C "$(KOMGA_DIR)" down
+
+## komga-stop: stop the local Komga container, keep it around
+.PHONY: komga-stop
+komga-stop:
+	$(MAKE) -C "$(KOMGA_DIR)" stop
+
+## komga-logs: follow the local Komga container logs
+.PHONY: komga-logs
+komga-logs:
+	$(MAKE) -C "$(KOMGA_DIR)" logs
+
+## komga-check: verify the local Komga instance is reachable and the key works
+.PHONY: komga-check
+komga-check:
+	@echo "URL: $(KOMGA_URL)"
+	@printf "health:   "
+	@curl -fsS -m 5 "$(KOMGA_URL)/actuator/health" || { echo "UNREACHABLE — run 'make komga-up'."; exit 1; }
+	@echo
+	@if [ -n "$(KOMGA_API_KEY)" ]; then \
+		printf "api key:  "; \
+		curl -fsS -m 5 -H "X-API-Key: $(KOMGA_API_KEY)" "$(KOMGA_URL)/api/v2/users/me" \
+			|| { echo "REJECTED — the key may have been revoked."; exit 1; }; \
+		echo; \
+	else \
+		echo "api key:  (KOMGA_API_KEY unset — skipped)"; \
+	fi
+	@if [ -n "$(KOMGA_EMAIL)" ] && [ -n "$(KOMGA_PASSWORD)" ]; then \
+		printf "basic:    "; \
+		curl -fsS -m 5 -o /dev/null -w "OK (bootstrap path works)\n" \
+			-u "$(KOMGA_EMAIL):$(KOMGA_PASSWORD)" "$(KOMGA_URL)/api/v2/users/me" \
+			|| echo "REJECTED — check KOMGA_EMAIL/KOMGA_PASSWORD."; \
+	else \
+		echo "basic:    (KOMGA_EMAIL/KOMGA_PASSWORD unset — skipped)"; \
+	fi
+
+## komga-address: print what to type on the connect screen (simulator vs device)
+.PHONY: komga-address
+komga-address:
+	@echo "simulator: localhost:25600"
+	@echo "device:    $$(ipconfig getifaddr en0 2>/dev/null || echo '<mac-lan-ip>'):25600"
+	@echo
+	@echo "The simulator shares the Mac's network stack, so localhost reaches the"
+	@echo "container. A physical iPad is a separate host and needs the LAN address."
+
+## test-integration: run the live-server tests against local Komga (needs komga-up)
+.PHONY: test-integration
+test-integration:
+	@test -n "$(KOMGA_API_KEY)" || { echo "KOMGA_API_KEY is unset — set it in Makefile.local."; exit 1; }
+	@curl -fsS -m 5 "$(KOMGA_URL)/actuator/health" >/dev/null 2>&1 \
+		|| { echo "Komga is not answering at $(KOMGA_URL) — run 'make komga-up'."; exit 1; }
+	# There is no xcodebuild flag for test-process environment variables, and
+	# TEST_RUNNER_* only applies to UI-test runners — for app-hosted unit tests
+	# it silently does nothing. So: build, inject into the generated .xctestrun,
+	# then run that. Credentials go into a gitignored build/ artifact, never a
+	# committed scheme or test plan.
+	set -o pipefail; $(XCODEBUILD) build-for-testing \
+		-project $(PROJECT) -scheme $(SCHEME) \
+		-destination '$(DESTINATION)' \
+		-derivedDataPath $(INTEGRATION_DERIVED) $(FORMATTER)
+	@xctestrun=$$(ls -t $(INTEGRATION_DERIVED)/Build/Products/*.xctestrun 2>/dev/null | head -1); \
+	test -n "$$xctestrun" || { echo "No .xctestrun produced."; exit 1; }; \
+	for pair in KOMGA_URL:'$(KOMGA_URL)' KOMGA_API_KEY:'$(KOMGA_API_KEY)' \
+	            KOMGA_EMAIL:'$(KOMGA_EMAIL)' KOMGA_PASSWORD:'$(KOMGA_PASSWORD)'; do \
+		key=$${pair%%:*}; value=$${pair#*:}; \
+		[ -n "$$value" ] || continue; \
+		plutil -replace "$(UNIT_TARGET).EnvironmentVariables.$$key" -string "$$value" "$$xctestrun"; \
+	done; \
+	echo "Injected Komga settings into $$(basename "$$xctestrun")"; \
+	set -o pipefail; $(XCODEBUILD) test-without-building \
+		-xctestrun "$$xctestrun" \
 		-destination '$(DESTINATION)' \
 		-only-testing:$(UNIT_TARGET) $(FORMATTER)
 

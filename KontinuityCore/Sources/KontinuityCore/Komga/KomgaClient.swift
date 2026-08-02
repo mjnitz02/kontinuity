@@ -198,6 +198,11 @@ enum KomgaDate {
         return formatter
     }()
 
+    /// Komga sends nanosecond precision — a real `createdDate` is
+    /// `2026-08-02T10:42:11.858195884Z`. Measured against Foundation rather than
+    /// assumed: `ISO8601DateFormatter` accepts all nine fractional digits and
+    /// honours the offset, so no rescaling is needed. The offset-less branch is
+    /// the only shape the ISO formatters genuinely reject.
     static func parse(_ raw: String) -> Date? {
         if let date = withFractionalSeconds.date(from: raw) {
             return date
@@ -205,7 +210,8 @@ enum KomgaDate {
         if let date = internetDateTime.date(from: raw) {
             return date
         }
-        // Strip fractional seconds an offsetless value may still carry.
+        // `LocalDateTime` — no timezone at all. Drop any fractional part, since
+        // the fallback format has nowhere to put it.
         if let dot = raw.firstIndex(of: "."), let date = offsetless.date(from: String(raw[raw.startIndex ..< dot])) {
             return date
         }
