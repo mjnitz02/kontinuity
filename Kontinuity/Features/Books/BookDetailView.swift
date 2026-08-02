@@ -57,7 +57,13 @@ struct BookDetailView: View {
         .refreshable { await reload() }
         .task(id: book.id) { await reload() }
         .fullScreenCover(isPresented: $showingReader) {
-            ReaderView(book: current, service: session.service, sync: session.sync, downloads: session.downloads)
+            ReaderView(
+                book: current,
+                service: session.service,
+                sync: session.sync,
+                downloads: session.downloads,
+                glasses: session.glasses
+            )
         }
     }
 

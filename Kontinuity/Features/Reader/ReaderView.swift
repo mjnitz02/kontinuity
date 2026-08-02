@@ -15,26 +15,48 @@ struct ReaderView: View {
     let service: any KomgaServing
     let sync: ProgressionSyncEngine
     let downloads: DownloadCoordinator
+    let glasses: GlassesCoordinator
 
     @Environment(\.dismiss) private var dismiss
     @State private var model: ReaderModel
     @State private var loader: PageImageLoader
     @State private var chromeVisible = true
+    @State private var containerSize: CGSize = .zero
 
-    init(book: KomgaBook, service: any KomgaServing, sync: ProgressionSyncEngine, downloads: DownloadCoordinator) {
+    init(
+        book: KomgaBook,
+        service: any KomgaServing,
+        sync: ProgressionSyncEngine,
+        downloads: DownloadCoordinator,
+        glasses: GlassesCoordinator
+    ) {
         self.book = book
         self.service = service
         self.sync = sync
         self.downloads = downloads
+        self.glasses = glasses
         _model = State(initialValue: ReaderModel(book: book, service: service, sync: sync, downloads: downloads))
         _loader = State(initialValue: PageImageLoader(service: service))
     }
 
     var body: some View {
         GeometryReader { proxy in
-            content
-                .onAppear { model.updateLayout(for: proxy.size) }
-                .onChange(of: proxy.size) { _, newSize in model.updateLayout(for: newSize) }
+            Group {
+                if glasses.isActive {
+                    GlassesReaderView(
+                        glasses: glasses,
+                        showsContent: !glasses.isExternalDisplayConnected,
+                        onExit: exitGlassesAndReader,
+                        onNextBook: { Task { await advanceToNextBookForGlasses() } }
+                    )
+                } else {
+                    content
+                        .onAppear { model.updateLayout(for: proxy.size) }
+                        .onChange(of: proxy.size) { _, newSize in model.updateLayout(for: newSize) }
+                }
+            }
+            .onAppear { containerSize = proxy.size }
+            .onChange(of: proxy.size) { _, newSize in containerSize = newSize }
         }
         .background(Color.black)
         .statusBar(hidden: true)
@@ -43,6 +65,7 @@ struct ReaderView: View {
         // (PLAN §6) — this is how the coordinator knows which one that is.
         .onAppear { downloads.openBookID = book.id }
         .onDisappear {
+            glasses.exit()
             model.flushProgress()
             if downloads.openBookID == book.id {
                 downloads.openBookID = nil
@@ -99,6 +122,19 @@ struct ReaderView: View {
                     Text("\(model.currentSpreadIndex + 1) / \(model.spreads.count)")
                         .accessibilityIdentifier(AID.readerPageLabel)
                 }
+                Spacer()
+                Button {
+                    glasses.enter(
+                        pageSources: model.pageSources,
+                        pageGeometries: model.pageGeometries,
+                        loader: loader,
+                        screenWidth: containerSize.width,
+                        screenHeight: containerSize.height
+                    )
+                } label: {
+                    Image(systemName: "eyeglasses")
+                }
+                .accessibilityIdentifier(AID.readerGlassesModeButton)
             }
             .padding()
             .background(.ultraThinMaterial)
@@ -146,6 +182,34 @@ struct ReaderView: View {
         }
         model = ReaderModel(book: next, service: service, sync: sync, downloads: downloads)
         Task { await model.load() }
+    }
+
+    private func exitGlassesAndReader() {
+        glasses.exit()
+        dismiss()
+    }
+
+    /// Glasses mode's `N` binding — unlike `openNextBook`, this awaits the
+    /// new model's load before recomputing bands, so glasses mode stays
+    /// active across the volume boundary instead of showing stale/empty
+    /// bands for a beat.
+    private func advanceToNextBookForGlasses() async {
+        await model.loadNextBookIfNeeded()
+        guard let next = model.nextBook else { return }
+        model.flushProgress()
+        if downloads.openBookID == book.id {
+            downloads.openBookID = next.id
+        }
+        let newModel = ReaderModel(book: next, service: service, sync: sync, downloads: downloads)
+        model = newModel
+        await newModel.load()
+        glasses.enter(
+            pageSources: newModel.pageSources,
+            pageGeometries: newModel.pageGeometries,
+            loader: loader,
+            screenWidth: containerSize.width,
+            screenHeight: containerSize.height
+        )
     }
 
     private var currentLeadingPageIndex: Int {

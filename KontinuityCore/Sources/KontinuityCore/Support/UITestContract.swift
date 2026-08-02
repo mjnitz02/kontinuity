@@ -138,4 +138,10 @@ public enum AID {
     public static let readerDone = "reader.done"
     public static let readerPageLabel = "reader.pageLabel"
     public static let readerScrubber = "reader.scrubber"
+
+    // Glasses mode (Mode B, READER-DESIGN §3)
+    public static let readerGlassesModeButton = "reader.glassesModeButton"
+    public static let glassesSurface = "glasses.surface"
+    public static let glassesStatusLabel = "glasses.statusLabel"
+    public static let glassesExit = "glasses.exit"
 }

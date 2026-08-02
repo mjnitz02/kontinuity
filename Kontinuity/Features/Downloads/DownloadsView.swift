@@ -38,7 +38,13 @@ struct DownloadsView: View {
         .accessibilityIdentifier(AID.downloadsList)
         .navigationTitle("Downloaded")
         .fullScreenCover(item: $readerBook) { book in
-            ReaderView(book: book, service: session.service, sync: session.sync, downloads: session.downloads)
+            ReaderView(
+                book: book,
+                service: session.service,
+                sync: session.sync,
+                downloads: session.downloads,
+                glasses: session.glasses
+            )
         }
     }
 

@@ -3,9 +3,14 @@
 //  KontinuityCore
 //
 //  Pure page-layout math — no UIKit, fully unit-testable (READER-DESIGN §4).
-//  Scoped to Mode A (iPad panel reading) only: `.fitPage` and `.spread`.
-//  `.bands`/`.continuous` (Mode B, glasses reading) arrive with phase 6 rather
-//  than being stubbed out now.
+//  `PageLayout` covers Mode A (iPad panel reading): `.fitPage` and `.spread`,
+//  grouping whole pages into indices. `BandLayout` below is Mode B (glasses
+//  reading, phase 6): it needs sub-page rects, not whole-page groups, so it's
+//  a separate namespace rather than a third `LayoutMode` case shoehorned into
+//  `spreads(for:mode:progression:)`'s `[PageSpread]` return shape.
+//  `.continuous`/webtoon scrolling (READER-DESIGN §4's case table) is out of
+//  scope — the library is paged CBZ manga, not webtoon strips, and
+//  `ReadingProgression` has no `.ttb` case to drive it.
 //
 
 import Foundation
@@ -99,5 +104,91 @@ public enum PageLayout {
             }
         }
         return result
+    }
+}
+
+/// A rect in **fractional page-space** — 0...1 across the page's own width
+/// and height, not raw pixels. Rendering only ever needs this multiplied
+/// against the size of the already-decoded page image, so there's no need
+/// to thread the page's pixel dimensions back out of this module.
+public struct BandRect: Sendable, Hashable {
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+
+    public init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+}
+
+/// One full-bleed, readable-scale viewport within a single page — the unit
+/// Mode B's reader walks through with a single integer index, the same way
+/// Mode A walks `[PageSpread]` (READER-DESIGN §3-4).
+public struct Band: Sendable, Hashable {
+    public let pageIndex: Int
+    public let rect: BandRect
+
+    public init(pageIndex: Int, rect: BandRect) {
+        self.pageIndex = pageIndex
+        self.rect = rect
+    }
+}
+
+/// Mode B's layout math (READER-DESIGN §3-4): fit page *width*, then walk
+/// down the page in overlapping bands instead of shrinking the whole page to
+/// fit a 16:9 external display. Pure — no UIKit, no screen queried directly;
+/// the caller supplies the target size.
+public enum BandLayout {
+    /// Flattened across every page, in traversal order — `.rtl` reverses
+    /// which page comes first, never the top-to-bottom order of bands
+    /// within a page (same asymmetric rule `PageLayout.spreads` applies to
+    /// pair order under `.rtl`).
+    public static func bands(
+        for pages: [PageGeometry],
+        screenWidth: Double,
+        screenHeight: Double,
+        overlap: Double = 0.08,
+        progression: ReadingProgression = .ltr
+    ) -> [Band] {
+        let order = progression == .rtl ? Array(pages.indices.reversed()) : Array(pages.indices)
+        return order.flatMap { index in
+            bandRects(for: pages[index], screenWidth: screenWidth, screenHeight: screenHeight, overlap: overlap)
+                .map { Band(pageIndex: index, rect: $0) }
+        }
+    }
+
+    /// A double-spread page or one with unknown dimensions never gets
+    /// banded — same "stands alone" rule `PageLayout.spreads` uses, and the
+    /// same fallback that keeps unknown/zero dimensions from dividing by
+    /// zero (READER-DESIGN §4: "degrade to `.fitPage`").
+    private static func bandRects(
+        for page: PageGeometry,
+        screenWidth: Double,
+        screenHeight: Double,
+        overlap: Double
+    ) -> [BandRect] {
+        let wholePage = [BandRect(x: 0, y: 0, width: 1, height: 1)]
+        guard page.isKnown, !PageLayout.isDoubleSpread(page) else { return wholePage }
+
+        let scale = screenWidth / page.width
+        let visibleHeight = screenHeight / scale
+        // The page already fits — one band, whether it's shorter than the
+        // band height or lands exactly on it.
+        guard visibleHeight < page.height else { return wholePage }
+
+        let heightFraction = visibleHeight / page.height
+        // Evenly distributed rather than a fixed step, so the last band
+        // never ends up a stunted near-repeat of the one before it — every
+        // step is the same size and the overlap is at least the requested
+        // fraction everywhere.
+        let bandCount = Int(((page.height - visibleHeight) / (visibleHeight * (1 - overlap))).rounded(.up)) + 1
+        let step = (page.height - visibleHeight) / Double(bandCount - 1)
+        return (0 ..< bandCount).map { bandIndex in
+            BandRect(x: 0, y: Double(bandIndex) * step / page.height, width: 1, height: heightFraction)
+        }
     }
 }

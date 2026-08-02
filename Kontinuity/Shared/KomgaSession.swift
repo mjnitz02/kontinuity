@@ -21,6 +21,7 @@ final class KomgaSession {
     let thumbnails: ThumbnailLoader
     let sync: ProgressionSyncEngine
     let downloads: DownloadCoordinator
+    let glasses: GlassesCoordinator
 
     /// The server's libraries, loaded once for the sidebar. Small and stable —
     /// a home Komga has a handful — so there's no paging here.
@@ -46,6 +47,10 @@ final class KomgaSession {
             modelContext: modelContext,
             sessionConfiguration: downloadSessionConfiguration
         )
+        glasses = GlassesCoordinator()
+        // The only path a manually-built GlassesSceneDelegate has into this
+        // session's state — see AppDelegate's doc comment.
+        AppDelegate.glassesCoordinator = glasses
     }
 
     /// The choke point every "push then refresh" trigger should call instead

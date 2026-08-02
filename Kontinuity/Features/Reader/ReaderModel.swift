@@ -130,8 +130,11 @@ final class ReaderModel {
 
     // MARK: - Layout
 
-    private func recomputeSpreads() {
-        let pages: [PageGeometry] = if let localManifest {
+    /// Also what Mode B's `BandLayout` computes against (`GlassesCoordinator.enter`)
+    /// — glasses mode reuses whatever manifest this model already loaded
+    /// rather than re-fetching.
+    var pageGeometries: [PageGeometry] {
+        if let localManifest {
             localManifest.pages.map { PageGeometry(width: Double($0.width ?? 0), height: Double($0.height ?? 0)) }
         } else if let remoteManifest {
             remoteManifest.readingOrder
@@ -139,9 +142,12 @@ final class ReaderModel {
         } else {
             []
         }
+    }
+
+    private func recomputeSpreads() {
         // TODO: read the series' reading direction once RTL is supported
         // (READER-DESIGN §1) — pinned to LTR everywhere for now.
-        spreads = PageLayout.spreads(for: pages, mode: mode, progression: .ltr)
+        spreads = PageLayout.spreads(for: pageGeometries, mode: mode, progression: .ltr)
     }
 
     /// Resolves via the sync engine rather than trusting `book.readProgress`
