@@ -26,4 +26,128 @@ public protocol KomgaServing: Sendable {
     /// `DELETE /api/v2/users/me/api-keys/{id}` — used to revoke on disconnect so
     /// signing out doesn't leave an orphaned key on the server forever.
     func deleteAPIKey(id: String) async throws
+
+    // MARK: - Browse (phase 2)
+
+    /// `GET /api/v1/libraries` — unpaged; Komga returns the lot.
+    func libraries() async throws -> [KomgaLibrary]
+
+    /// `GET /api/v1/series` — the series grid, with search and library filter.
+    func series(matching query: SeriesQuery) async throws -> KomgaPage<KomgaSeries>
+
+    /// `GET /api/v1/series/{id}`
+    func series(id: String) async throws -> KomgaSeries
+
+    /// `GET /api/v1/series/{id}/books`, sorted by `metadata.numberSort` — the
+    /// reading order, which is also the order phase 5 enqueues downloads in.
+    func books(inSeries seriesID: String, matching query: BookQuery) async throws -> KomgaPage<KomgaBook>
+
+    /// `GET /api/v1/books/{id}`
+    func book(id: String) async throws -> KomgaBook
+
+    /// `GET /api/v1/books?read_status=IN_PROGRESS`, most recently read first.
+    func keepReading(matching query: BookQuery) async throws -> KomgaPage<KomgaBook>
+
+    /// `GET /api/v1/books/ondeck` — the next unread book of each series that's
+    /// been started and has nothing in progress. Komga computes this; there is
+    /// no sane way to derive it client-side without reading the whole library.
+    func onDeck(matching query: BookQuery) async throws -> KomgaPage<KomgaBook>
+
+    /// Poster bytes for a series or book. Returns nil when Komga has no
+    /// thumbnail yet (404), which is a normal state during a library scan
+    /// rather than something worth showing an error for.
+    func thumbnailData(for target: KomgaThumbnail) async throws -> Data?
+}
+
+// MARK: - Queries
+
+public struct SeriesQuery: Sendable, Hashable {
+    public var libraryID: String?
+    /// Free-text search across series metadata. Komga switches the default sort
+    /// to relevance when this is set, so ``sort`` is skipped while searching.
+    public var searchTerm: String?
+    /// Nil includes both; Komga's own series feeds pass `false`, which is why
+    /// oneshots are invisible in most clients (KOMGA-API §6).
+    public var oneshot: Bool?
+    public var sort: SeriesSort
+    public var page: Int
+    public var size: Int
+
+    public init(
+        libraryID: String? = nil,
+        searchTerm: String? = nil,
+        oneshot: Bool? = nil,
+        sort: SeriesSort = .title,
+        page: Int = 0,
+        size: Int = 60
+    ) {
+        self.libraryID = libraryID
+        self.searchTerm = searchTerm
+        self.oneshot = oneshot
+        self.sort = sort
+        self.page = page
+        self.size = size
+    }
+
+    /// The same query pointed at a later page.
+    public func page(_ page: Int) -> SeriesQuery {
+        var copy = self
+        copy.page = page
+        return copy
+    }
+}
+
+public enum SeriesSort: String, Sendable, Hashable, CaseIterable {
+    case title = "metadata.titleSort,asc"
+    case recentlyAdded = "created,desc"
+    case recentlyUpdated = "lastModified,desc"
+
+    public var label: String {
+        switch self {
+        case .title: "Title"
+        case .recentlyAdded: "Recently added"
+        case .recentlyUpdated: "Recently updated"
+        }
+    }
+}
+
+public struct BookQuery: Sendable, Hashable {
+    /// Empty means no filter. Komga ORs multiple values together.
+    public var readStatus: [KomgaReadStatus]
+    /// Only meaningful for the library-wide feeds; ignored when listing a
+    /// series' books, which are already scoped.
+    public var libraryID: String?
+    public var page: Int
+    public var size: Int
+
+    public init(
+        readStatus: [KomgaReadStatus] = [],
+        libraryID: String? = nil,
+        page: Int = 0,
+        size: Int = 100
+    ) {
+        self.readStatus = readStatus
+        self.libraryID = libraryID
+        self.page = page
+        self.size = size
+    }
+
+    public func page(_ page: Int) -> BookQuery {
+        var copy = self
+        copy.page = page
+        return copy
+    }
+}
+
+/// The two poster endpoints, which differ only in their path.
+public enum KomgaThumbnail: Sendable, Hashable {
+    case series(String)
+    case book(String)
+
+    public var path: String {
+        switch self {
+        case let .series(id): "/api/v1/series/\(id)/thumbnail"
+        case let .book(id): "/api/v1/books/\(id)/thumbnail"
+        }
+    }
 }

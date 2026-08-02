@@ -101,6 +101,7 @@ struct ConnectView: View {
                     }
                 }
                 .disabled(!model.canSubmit)
+                .accessibilityIdentifier(AID.connectSubmit)
             }
         }
         .formStyle(.grouped)

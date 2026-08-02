@@ -6,6 +6,7 @@ included:
   - Kontinuity
   - KontinuityCore/Sources
   - KontinuityTests
+  - KontinuityUITests
 
 excluded:
   - .build

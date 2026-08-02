@@ -2,8 +2,8 @@
 //  RootView.swift
 //  Kontinuity
 //
-//  Phase 1 shell. The sidebar roots are still placeholders — phase 2 fills them
-//  with libraries/series/books. What's real here is the connected-vs-not split.
+//  The connected-vs-not split, and the sidebar the rest of the app hangs off.
+//  PLAN §7: sidebar → content grid → detail, Komga-ish and iPad-native.
 //
 
 import KontinuityCore
@@ -11,75 +11,180 @@ import SwiftData
 import SwiftUI
 
 struct RootView: View {
-    // Multi-server is an explicit non-goal (PLAN §1), so "the server" is the
-    // first (and only) row.
+    /// Multi-server is an explicit non-goal (PLAN §1), so "the server" is the
+    /// first (and only) row.
     @Query(sort: \Server.addedDate) private var servers: [Server]
-    @State private var selection: SidebarItem? = .libraries
-
-    private enum SidebarItem: Hashable, CaseIterable {
-        case libraries, keepReading, onDeck, downloaded, server
-
-        var title: String {
-            switch self {
-            case .libraries: "Libraries"
-            case .keepReading: "Keep Reading"
-            case .onDeck: "On Deck"
-            case .downloaded: "Downloaded"
-            case .server: "Server"
-            }
-        }
-
-        var systemImage: String {
-            switch self {
-            case .libraries: "books.vertical"
-            case .keepReading: "bookmark"
-            case .onDeck: "square.stack"
-            case .downloaded: "arrow.down.circle"
-            case .server: "server.rack"
-            }
-        }
-
-        /// Phase 2 replaces these with real content.
-        var isImplemented: Bool {
-            self == .server
-        }
-    }
 
     var body: some View {
         if let server = servers.first {
-            connected(to: server)
+            ConnectedView(server: server)
         } else {
             NavigationStack {
                 ConnectView()
             }
         }
     }
+}
 
-    private func connected(to server: Server) -> some View {
-        NavigationSplitView {
-            List(SidebarItem.allCases, id: \.self, selection: $selection) { item in
-                Label(item.title, systemImage: item.systemImage)
+/// Owns the `KomgaSession` for a server. Split out from `RootView` so the
+/// session is built once, on appearance, rather than on every redraw of a view
+/// that a `@Query` re-evaluates.
+private struct ConnectedView: View {
+    let server: Server
+
+    @Environment(\.secretStore) private var secrets
+    @Environment(\.komgaProvider) private var provider
+    @State private var session: KomgaSession?
+    @State private var failure: String?
+
+    var body: some View {
+        Group {
+            if let session {
+                BrowseSplitView()
+                    .environment(session)
+            } else if let failure {
+                unavailable(failure)
+            } else {
+                ProgressView()
             }
-            .navigationTitle(AppInfo.name)
-        } detail: {
-            NavigationStack {
-                switch selection {
-                case .server:
+        }
+        .task(id: server.persistentModelID) {
+            guard session == nil else { return }
+            do {
+                guard let service = try provider.makeService(server, secrets) else {
+                    // The Keychain no longer holds the key: a restored backup,
+                    // or someone cleared it. Recoverable, but only by
+                    // reconnecting — so say that instead of failing every call.
+                    failure = "The stored API key is missing."
+                    return
+                }
+                session = KomgaSession(server: server, service: service)
+            } catch {
+                failure = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    private func unavailable(_ message: String) -> some View {
+        NavigationStack {
+            ContentUnavailableView {
+                Label("Can't reach the Keychain", systemImage: "key.slash")
+            } description: {
+                Text("\(message) Disconnect and connect again to store a new one.")
+            } actions: {
+                NavigationLink("Server settings") {
                     ServerSettingsView(server: server)
-                case let .some(item):
-                    ContentUnavailableView(
-                        item.title,
-                        systemImage: item.systemImage,
-                        description: Text("Browsing arrives in the next phase.")
-                    )
-                case .none:
-                    ContentUnavailableView(
-                        "Nothing selected",
-                        systemImage: "sidebar.left",
-                        description: Text("Pick something from the sidebar.")
-                    )
                 }
             }
+        }
+    }
+}
+
+private struct BrowseSplitView: View {
+    @Environment(KomgaSession.self) private var session
+    @State private var selection: SidebarItem? = .allSeries
+    @State private var path = NavigationPath()
+
+    enum SidebarItem: Hashable {
+        case allSeries
+        case keepReading
+        case onDeck
+        case library(id: String, name: String)
+        case downloaded
+        case server
+    }
+
+    var body: some View {
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            NavigationStack(path: $path) {
+                detail
+            }
+        }
+        .task { await session.loadLibraries() }
+        // A pushed series belongs to the root it was reached from; leaving it on
+        // screen after switching roots would show a series from a library the
+        // sidebar no longer says you're in.
+        .onChange(of: selection) { path = NavigationPath() }
+    }
+
+    private var sidebar: some View {
+        List(selection: $selection) {
+            Section("Library") {
+                row(.allSeries, "All Series", "books.vertical", AID.sidebarAllSeries)
+                row(.keepReading, "Keep Reading", "bookmark", AID.sidebarKeepReading)
+                row(.onDeck, "On Deck", "square.stack", AID.sidebarOnDeck)
+            }
+
+            // Only worth a section when there's more than one to choose between;
+            // a single-library server is the common case and "All Series"
+            // already is that library.
+            if session.libraries.count > 1 {
+                Section("Libraries") {
+                    ForEach(session.libraries) { library in
+                        row(
+                            .library(id: library.id, name: library.name),
+                            library.name,
+                            library.unavailable ? "externaldrive.trianglebadge.exclamationmark" : "folder",
+                            AID.sidebarLibrary(library.id)
+                        )
+                    }
+                }
+            }
+
+            Section {
+                row(.downloaded, "Downloaded", "arrow.down.circle", AID.sidebarDownloaded)
+                row(.server, "Server", "server.rack", AID.sidebarServer)
+            }
+
+            if let error = session.librariesError {
+                Section {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityIdentifier(AID.sidebar)
+        .navigationTitle(AppInfo.name)
+    }
+
+    private func row(_ item: SidebarItem, _ title: String, _ symbol: String, _ id: String) -> some View {
+        Label(title, systemImage: symbol)
+            // Without combining, the identifier propagates to both the icon and
+            // the text, and a lookup can land on the icon — which has the
+            // symbol's frame, not the row's, and so isn't tappable.
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(id)
+            .tag(item)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch selection {
+        case .allSeries:
+            SeriesGridView(libraryID: nil, title: "All Series")
+        case let .library(id, name):
+            SeriesGridView(libraryID: id, title: name)
+        case .keepReading:
+            BookShelfView(shelf: .keepReading)
+        case .onDeck:
+            BookShelfView(shelf: .onDeck)
+        case .downloaded:
+            ContentUnavailableView(
+                "Downloaded",
+                systemImage: "arrow.down.circle",
+                description: Text("Offline reading arrives in a later version.")
+            )
+        case .server:
+            ServerSettingsView(server: session.server)
+        case .none:
+            ContentUnavailableView(
+                "Nothing selected",
+                systemImage: "sidebar.left",
+                description: Text("Pick something from the sidebar.")
+            )
         }
     }
 }

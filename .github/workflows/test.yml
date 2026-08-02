@@ -35,3 +35,28 @@ jobs:
 
       - name: Run unit tests
         run: make test-unit SIMULATOR_NAME="${{ steps.sim.outputs.name }}"
+
+  # Separate job: XCUITests boot a simulator and drive the real app, so they're
+  # minutes rather than seconds. Keeping them off the unit job means a logic
+  # regression still reports fast.
+  ui:
+    name: UI tests
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Pick an iPad simulator
+        id: sim
+        run: |
+          name=$(xcrun simctl list devices available \
+            | grep -oE 'iPad[^(]*' | head -1 | sed 's/ *$//')
+          echo "Using simulator: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Run UI tests
+        run: make test-ui SIMULATOR_NAME="${{ steps.sim.outputs.name }}"

@@ -10,6 +10,7 @@
 PROJECT        := Kontinuity.xcodeproj
 SCHEME         := Kontinuity
 UNIT_TARGET    := KontinuityTests
+UI_TARGET      := KontinuityUITests
 
 # Simulator destination. The iPad is the primary target — iPhone support comes
 # later (see .claude/PLAN.md phase 7), so the default sim is an iPad.
@@ -136,6 +137,21 @@ test-unit test:
 		-project $(PROJECT) -scheme $(SCHEME) \
 		-destination '$(DESTINATION)' \
 		-only-testing:$(UNIT_TARGET) $(FORMATTER)
+
+## test-ui: run the XCUITest suite (slower — boots a simulator and drives the app)
+.PHONY: test-ui
+test-ui:
+	set -o pipefail; $(XCODEBUILD) test \
+		-project $(PROJECT) -scheme $(SCHEME) \
+		-destination '$(DESTINATION)' \
+		-only-testing:$(UI_TARGET) $(FORMATTER)
+
+## test-all: run the unit and UI suites together
+.PHONY: test-all
+test-all:
+	set -o pipefail; $(XCODEBUILD) test \
+		-project $(PROJECT) -scheme $(SCHEME) \
+		-destination '$(DESTINATION)' $(FORMATTER)
 
 ## komga-up: start the local Komga test instance (docker)
 .PHONY: komga-up

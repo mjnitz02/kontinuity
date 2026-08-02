@@ -6,9 +6,11 @@ An iPad client for [Komga](https://komga.org/), focused on reading manga and com
 No paywalls, no feature gates, no analytics, no tracking, no obfuscation. Built for
 one person's actual reading habits; shared because there's no reason not to.
 
-> **Status: early.** Connects to a Komga server and authenticates — enter an address
-> plus either your Komga login (which mints a device API key and discards the password)
-> or an existing API key. Browsing, reading, sync and downloads are not built yet.
+> **Status: early.** Connects to a Komga server and browses it. Enter an address plus
+> either your Komga login (which mints a device API key and discards the password) or
+> an existing API key, then browse libraries, series and books with covers, metadata
+> and read state — including Keep Reading and On Deck. Reading, sync and downloads
+> are not built yet.
 
 ## What it will do
 
@@ -41,9 +43,22 @@ make install-tools     # swiftlint, swiftformat, xcbeautify
 make install-hooks     # pre-commit: format-check + lint
 make build             # build for the iPad simulator
 make test-unit         # the CI gate — hermetic, no server needed
+make test-ui           # XCUITest — boots a simulator, drives the app
+make test-all          # both suites
 make format            # rewrite sources
 make lint              # strict — warnings fail
 ```
+
+### UI tests
+
+`make test-ui` needs no server. The app serves itself a canned library when
+launched with `-UITestMode connected`: an in-memory store, a stub Komga service,
+and a throwaway Keychain, all compiled out of Release builds. `-UITestMode fresh`
+starts with no server, for the connect screen.
+
+Accessibility identifiers and the fixture ids live in `KontinuityCore`, because a
+UI test bundle doesn't link the app it drives — sharing them makes a rename a
+compile error instead of a CI timeout.
 
 ### Testing against a real Komga
 
@@ -82,7 +97,8 @@ themselves.
 |---|---|
 | `Kontinuity/` | App target — SwiftUI views, iPad-first |
 | `KontinuityCore/` | Local SPM package: Komga client, models, sync engine, page-layout math. No UIKit, fully unit-testable. |
-| `KontinuityTests/` | Swift Testing suite |
+| `KontinuityTests/` | Swift Testing suite — unit tests plus an opt-in live-server suite |
+| `KontinuityUITests/` | XCUITest suite, driven against the built-in stub server |
 | `Config/Info.plist` | Only the keys that can't be build settings — ATS local networking, local network usage string |
 
 The hard parts (sync conflict resolution, band layout) live in `KontinuityCore` on

@@ -71,12 +71,15 @@ public struct ServerAddress: Sendable, Hashable {
     /// Built through `URLComponents` rather than `URL.appending(path:)` so the
     /// subpath concatenation is explicit — appending relative paths to a URL
     /// whose path is empty behaves differently than to one ending in a segment.
-    public func url(path: String) -> URL {
+    public func url(path: String, query: [URLQueryItem] = []) -> URL {
         let suffix = path.hasPrefix("/") ? path : "/" + path
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             return baseURL
         }
         components.path += suffix
+        // Empty rather than `[]` matters: setting `queryItems = []` emits a bare
+        // trailing "?", which some reverse proxies pass through to Komga verbatim.
+        components.queryItems = query.isEmpty ? nil : query
         return components.url ?? baseURL
     }
 

@@ -108,9 +108,3 @@ final class ConnectModel {
         return nil
     }
 }
-
-extension String {
-    var trimmed: String {
-        trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}

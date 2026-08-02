@@ -59,18 +59,103 @@ public struct KomgaClient: KomgaServing {
         _ = try await send(request)
     }
 
+    // MARK: - KomgaServing: browse
+
+    public func libraries() async throws -> [KomgaLibrary] {
+        try await get("/api/v1/libraries")
+    }
+
+    public func series(matching query: SeriesQuery) async throws -> KomgaPage<KomgaSeries> {
+        var items = [
+            URLQueryItem(name: "page", value: String(query.page)),
+            URLQueryItem(name: "size", value: String(query.size))
+        ]
+        if let libraryID = query.libraryID {
+            items.append(URLQueryItem(name: "library_id", value: libraryID))
+        }
+        if let oneshot = query.oneshot {
+            items.append(URLQueryItem(name: "oneshot", value: String(oneshot)))
+        }
+        let search = query.searchTerm?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if search.isEmpty {
+            items.append(URLQueryItem(name: "sort", value: query.sort.rawValue))
+        } else {
+            // Deliberately no `sort`: Komga falls back to relevance ordering
+            // when a search term is present and an explicit sort would override
+            // it, burying the best match somewhere down the alphabet.
+            items.append(URLQueryItem(name: "search", value: search))
+        }
+        return try await get("/api/v1/series", query: items)
+    }
+
+    public func series(id: String) async throws -> KomgaSeries {
+        try await get("/api/v1/series/\(id)")
+    }
+
+    public func books(inSeries seriesID: String, matching query: BookQuery) async throws -> KomgaPage<KomgaBook> {
+        var items = [
+            URLQueryItem(name: "page", value: String(query.page)),
+            URLQueryItem(name: "size", value: String(query.size)),
+            URLQueryItem(name: "sort", value: "metadata.numberSort,asc")
+        ]
+        items += query.readStatus.map { URLQueryItem(name: "read_status", value: $0.rawValue) }
+        return try await get("/api/v1/series/\(seriesID)/books", query: items)
+    }
+
+    public func book(id: String) async throws -> KomgaBook {
+        try await get("/api/v1/books/\(id)")
+    }
+
+    public func keepReading(matching query: BookQuery) async throws -> KomgaPage<KomgaBook> {
+        var items = [
+            URLQueryItem(name: "page", value: String(query.page)),
+            URLQueryItem(name: "size", value: String(query.size)),
+            URLQueryItem(name: "read_status", value: KomgaReadStatus.inProgress.rawValue),
+            URLQueryItem(name: "sort", value: "readProgress.readDate,desc")
+        ]
+        if let libraryID = query.libraryID {
+            items.append(URLQueryItem(name: "library_id", value: libraryID))
+        }
+        return try await get("/api/v1/books", query: items)
+    }
+
+    public func onDeck(matching query: BookQuery) async throws -> KomgaPage<KomgaBook> {
+        // No `sort`: the endpoint has its own ordering and rejects one
+        // (`@PageableWithoutSortAsQueryParam`).
+        var items = [
+            URLQueryItem(name: "page", value: String(query.page)),
+            URLQueryItem(name: "size", value: String(query.size))
+        ]
+        if let libraryID = query.libraryID {
+            items.append(URLQueryItem(name: "library_id", value: libraryID))
+        }
+        return try await get("/api/v1/books/ondeck", query: items)
+    }
+
+    public func thumbnailData(for target: KomgaThumbnail) async throws -> Data? {
+        var request = makeRequest(path: target.path, method: "GET")
+        request.setValue("image/jpeg", forHTTPHeaderField: "Accept")
+        do {
+            return try await send(request)
+        } catch KomgaError.notFound {
+            // A book whose poster hasn't been generated yet. The grid draws a
+            // placeholder; an error banner would be noise during a scan.
+            return nil
+        }
+    }
+
     // MARK: - Request plumbing
 
-    private func makeRequest(path: String, method: String) -> URLRequest {
-        var request = URLRequest(url: address.url(path: path))
+    private func makeRequest(path: String, method: String, query: [URLQueryItem] = []) -> URLRequest {
+        var request = URLRequest(url: address.url(path: path, query: query))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(AppInfo.userAgent, forHTTPHeaderField: "User-Agent")
         return request
     }
 
-    private func get<T: Decodable>(_ path: String) async throws -> T {
-        guard let data = try await send(makeRequest(path: path, method: "GET")) else {
+    private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
+        guard let data = try await send(makeRequest(path: path, method: "GET", query: query)) else {
             throw KomgaError.decoding(description: "Expected a response body from \(path).")
         }
         return try decode(T.self, from: data)

@@ -140,4 +140,93 @@ struct LiveKomgaTests {
         #expect(key.createdDate >= before.addingTimeInterval(-120))
         #expect(key.createdDate <= after.addingTimeInterval(120))
     }
+
+    // MARK: - Browse
+
+    /// Every browse assertion needs a series to hang off, and the container's
+    /// contents depend on whatever was scanned into it. Tests that need one skip
+    /// rather than fail on an empty library.
+    private func anySeries() async throws -> KomgaSeries? {
+        let key = try #require(LiveKomga.apiKey)
+        let page = try await client(.apiKey(key)).series(matching: SeriesQuery(size: 1))
+        return page.content.first
+    }
+
+    @Test("decodes the real libraries payload")
+    func liveLibraries() async throws {
+        let key = try #require(LiveKomga.apiKey)
+        let libraries = try await client(.apiKey(key)).libraries()
+
+        // ~30 fields of scanner configuration we deliberately don't decode; this
+        // proves ignoring them is actually free rather than a decoding failure.
+        for library in libraries {
+            #expect(!library.id.isEmpty)
+            #expect(!library.name.isEmpty)
+        }
+    }
+
+    @Test("decodes a real series page, envelope included")
+    func liveSeriesPage() async throws {
+        let key = try #require(LiveKomga.apiKey)
+        let page = try await client(.apiKey(key)).series(matching: SeriesQuery(size: 5))
+
+        #expect(page.number == 0)
+        #expect(page.size == 5)
+        #expect(page.content.count <= 5)
+        #expect(page.totalElements >= page.content.count)
+
+        for series in page.content {
+            #expect(!series.displayTitle.isEmpty)
+            // The three counts are what the unread badge and the phase-5
+            // download gesture both read.
+            #expect(series.booksReadCount + series.booksUnreadCount + series.booksInProgressCount == series.booksCount)
+        }
+    }
+
+    @Test("decodes a real book list with inline read progress")
+    func liveBooks() async throws {
+        guard let series = try await anySeries() else { return }
+        let key = try #require(LiveKomga.apiKey)
+        let page = try await client(.apiKey(key)).books(inSeries: series.id, matching: BookQuery(size: 10))
+
+        // This inline `readProgress` is the entire reason browse goes through
+        // /api/v1 rather than OPDS v2 (KOMGA-API §3). If it ever stops arriving,
+        // the architecture's premise is gone and this is where we find out.
+        for book in page.content {
+            #expect(book.seriesId == series.id)
+            #expect(book.media.pagesCount > 0 || book.media.status != "READY")
+            if let progress = book.readProgress {
+                #expect(progress.page >= 1)
+            }
+        }
+
+        // Sorted ascending by numberSort — the reading order.
+        let sorted = page.content.map(\.metadata.numberSort)
+        #expect(sorted == sorted.sorted())
+    }
+
+    @Test("fetches a real series poster")
+    func liveThumbnail() async throws {
+        guard let series = try await anySeries() else { return }
+        let key = try #require(LiveKomga.apiKey)
+        let data = try await client(.apiKey(key)).thumbnailData(for: .series(series.id))
+
+        let bytes = try #require(data, "a scanned series should have a generated poster")
+        #expect(bytes.count > 1000)
+        // JPEG SOI marker — proves we got image bytes rather than an error page
+        // a reverse proxy answered with a 200.
+        #expect(bytes.prefix(2) == Data([0xFF, 0xD8]))
+    }
+
+    @Test("the on-deck and keep-reading feeds decode")
+    func liveFeeds() async throws {
+        let key = try #require(LiveKomga.apiKey)
+        let live = try client(.apiKey(key))
+
+        // Both are usually empty on a fresh container. What's under test is that
+        // the request shape is accepted — on deck in particular 400s if a sort
+        // is sent, which a stub can't catch.
+        _ = try await live.onDeck(matching: BookQuery(size: 5))
+        _ = try await live.keepReading(matching: BookQuery(size: 5))
+    }
 }
