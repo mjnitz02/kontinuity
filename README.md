@@ -6,8 +6,9 @@ An iPad client for [Komga](https://komga.org/), focused on reading manga and com
 No paywalls, no feature gates, no analytics, no tracking, no obfuscation. Built for
 one person's actual reading habits; shared because there's no reason not to.
 
-> **Status: early.** The project skeleton builds and the test gate is green. Nothing
-> connects to a server yet.
+> **Status: early.** Connects to a Komga server and authenticates — enter an address
+> plus either your Komga login (which mints a device API key and discards the password)
+> or an existing API key. Browsing, reading, sync and downloads are not built yet.
 
 ## What it will do
 
