@@ -21,142 +21,152 @@ import Testing
 /// this toolchain — a test-harness artifact (a real app session only ever
 /// builds one container), not a concurrency bug in the engine itself. Each
 /// test still gets a clean slate via an explicit wipe in `makeContext()`.
-@MainActor
-@Suite("ProgressionSyncEngine", .serialized)
-struct ProgressionSyncEngineTests {
-    private let device = KomgaDevice(id: UUID(), name: "Test iPad")
+/// Nested under `SwiftDataTests` so this suite's container can't run
+/// concurrently with `DownloadCoordinatorTests`'s either — see that type.
+extension SwiftDataTests {
+    @MainActor
+    @Suite("ProgressionSyncEngine", .serialized)
+    struct ProgressionSyncEngineTests {
+        private let device = KomgaDevice(id: UUID(), name: "Test iPad")
 
-    private static let container: ModelContainer = {
-        do {
-            return try ModelContainer(for: Book.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
-        } catch {
-            fatalError("Could not create the in-memory test container: \(error)")
+        private static let container: ModelContainer = {
+            do {
+                return try ModelContainer(
+                    for: Book.self,
+                    configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+                )
+            } catch {
+                fatalError("Could not create the in-memory test container: \(error)")
+            }
+        }()
+
+        private func makeContext() throws -> ModelContext {
+            let context = ModelContext(Self.container)
+            for book in try context.fetch(FetchDescriptor<Book>()) {
+                context.delete(book)
+            }
+            try context.save()
+            return context
         }
-    }()
 
-    private func makeContext() throws -> ModelContext {
-        let context = ModelContext(Self.container)
-        for book in try context.fetch(FetchDescriptor<Book>()) {
-            context.delete(book)
+        @Test("a successful flush marks the row synced with the turn's own timestamp")
+        func flushSuccess() async throws {
+            let context = try makeContext()
+            let service = MockKomgaServing()
+            let engine = ProgressionSyncEngine(service: service, modelContext: context, device: device)
+
+            let turnDate = Date(timeIntervalSince1970: 1000)
+            engine.recordPageTurn(bookID: "b1", page: 5, pageHref: "/pages/5", mediaType: "image/jpeg", at: turnDate)
+            await engine.flush()
+
+            #expect(service.putCalls.count == 1)
+            #expect(service.putCalls.first?.readDate == turnDate)
+
+            let row = try #require(try context.fetch(FetchDescriptor<Book>()).first)
+            #expect(row.isPending == false)
+            #expect(row.serverPage == 5)
+            #expect(row.serverReadDate == turnDate)
         }
-        try context.save()
-        return context
-    }
 
-    @Test("a successful flush marks the row synced with the turn's own timestamp")
-    func flushSuccess() async throws {
-        let context = try makeContext()
-        let service = MockKomgaServing()
-        let engine = ProgressionSyncEngine(service: service, modelContext: context, device: device)
+        @Test("a newer page turn coalesces the pending write rather than queueing behind it")
+        func recordPageTurnCoalesces() async throws {
+            let context = try makeContext()
+            let service = MockKomgaServing()
+            let engine = ProgressionSyncEngine(service: service, modelContext: context, device: device)
 
-        let turnDate = Date(timeIntervalSince1970: 1000)
-        engine.recordPageTurn(bookID: "b1", page: 5, pageHref: "/pages/5", mediaType: "image/jpeg", at: turnDate)
-        await engine.flush()
+            engine.recordPageTurn(bookID: "b1", page: 5, pageHref: "/pages/5", mediaType: "image/jpeg")
+            engine.recordPageTurn(bookID: "b1", page: 6, pageHref: "/pages/6", mediaType: "image/jpeg")
+            await engine.flush()
 
-        #expect(service.putCalls.count == 1)
-        #expect(service.putCalls.first?.readDate == turnDate)
+            #expect(service.putCalls.count == 1)
+            #expect(service.putCalls.first?.page == 6)
+            #expect(try context.fetch(FetchDescriptor<Book>()).count == 1)
+        }
 
-        let row = try #require(try context.fetch(FetchDescriptor<Book>()).first)
-        #expect(row.isPending == false)
-        #expect(row.serverPage == 5)
-        #expect(row.serverReadDate == turnDate)
-    }
+        @Test("a 409 never retries — it clears pending and adopts whatever the server actually has")
+        func flushConflictAdoptsServer() async throws {
+            let context = try makeContext()
+            let serverDate = Date(timeIntervalSince1970: 2000)
+            let service = MockKomgaServing()
+            service.putResult = .failure(KomgaError.conflict)
+            service.bookResult = .success(Self.book(page: 9, readDate: serverDate))
+            let engine = ProgressionSyncEngine(service: service, modelContext: context, device: device)
 
-    @Test("a newer page turn coalesces the pending write rather than queueing behind it")
-    func recordPageTurnCoalesces() async throws {
-        let context = try makeContext()
-        let service = MockKomgaServing()
-        let engine = ProgressionSyncEngine(service: service, modelContext: context, device: device)
+            engine.recordPageTurn(bookID: "b1", page: 5, pageHref: "/pages/5", mediaType: "image/jpeg")
+            await engine.flush()
 
-        engine.recordPageTurn(bookID: "b1", page: 5, pageHref: "/pages/5", mediaType: "image/jpeg")
-        engine.recordPageTurn(bookID: "b1", page: 6, pageHref: "/pages/6", mediaType: "image/jpeg")
-        await engine.flush()
+            let row = try #require(try context.fetch(FetchDescriptor<Book>()).first)
+            #expect(row.isPending == false)
+            #expect(row.localPage == 9)
+            #expect(row.serverPage == 9)
+            #expect(row.serverReadDate == serverDate)
+        }
 
-        #expect(service.putCalls.count == 1)
-        #expect(service.putCalls.first?.page == 6)
-        #expect(try context.fetch(FetchDescriptor<Book>()).count == 1)
-    }
+        @Test("offline leaves every write pending and stops the rest of the queue, not just the first")
+        func flushOfflineLeavesPending() async throws {
+            let context = try makeContext()
+            let service = MockKomgaServing()
+            service.putResult = .failure(KomgaError.transport(code: .notConnectedToInternet, description: "offline"))
+            let engine = ProgressionSyncEngine(service: service, modelContext: context, device: device)
 
-    @Test("a 409 never retries — it clears pending and adopts whatever the server actually has")
-    func flushConflictAdoptsServer() async throws {
-        let context = try makeContext()
-        let serverDate = Date(timeIntervalSince1970: 2000)
-        let service = MockKomgaServing()
-        service.putResult = .failure(KomgaError.conflict)
-        service.bookResult = .success(Self.book(page: 9, readDate: serverDate))
-        let engine = ProgressionSyncEngine(service: service, modelContext: context, device: device)
+            engine.recordPageTurn(bookID: "b1", page: 5, pageHref: "/pages/5", mediaType: "image/jpeg")
+            engine.recordPageTurn(bookID: "b2", page: 8, pageHref: "/pages/8", mediaType: "image/jpeg")
+            await engine.flush()
 
-        engine.recordPageTurn(bookID: "b1", page: 5, pageHref: "/pages/5", mediaType: "image/jpeg")
-        await engine.flush()
+            let rows = try context.fetch(FetchDescriptor<Book>())
+            // Not `\.isPending` here: a bare key path passed to `allSatisfy` inside
+            // `#expect`'s macro expansion fails to type-check as `rethrows`.
+            // swiftformat:disable:next preferKeyPath
+            #expect(rows.allSatisfy { $0.isPending })
+            #expect(
+                service.putCalls.count == 1,
+                "the rest of the queue will fail the same way, so it isn't worth trying"
+            )
+        }
 
-        let row = try #require(try context.fetch(FetchDescriptor<Book>()).first)
-        #expect(row.isPending == false)
-        #expect(row.localPage == 9)
-        #expect(row.serverPage == 9)
-        #expect(row.serverReadDate == serverDate)
-    }
+        @Test("a book with no local row is untouched by reconciliation")
+        func reconcileWithoutLocalRowIsNoop() throws {
+            let context = try makeContext()
+            let engine = ProgressionSyncEngine(service: MockKomgaServing(), modelContext: context, device: device)
 
-    @Test("offline leaves every write pending and stops the rest of the queue, not just the first")
-    func flushOfflineLeavesPending() async throws {
-        let context = try makeContext()
-        let service = MockKomgaServing()
-        service.putResult = .failure(KomgaError.transport(code: .notConnectedToInternet, description: "offline"))
-        let engine = ProgressionSyncEngine(service: service, modelContext: context, device: device)
+            engine.reconcile(with: Self.book(page: 12, readDate: .now))
 
-        engine.recordPageTurn(bookID: "b1", page: 5, pageHref: "/pages/5", mediaType: "image/jpeg")
-        engine.recordPageTurn(bookID: "b2", page: 8, pageHref: "/pages/8", mediaType: "image/jpeg")
-        await engine.flush()
+            #expect(try context.fetch(FetchDescriptor<Book>()).isEmpty)
+        }
 
-        let rows = try context.fetch(FetchDescriptor<Book>())
-        // Not `\.isPending` here: a bare key path passed to `allSatisfy` inside
-        // `#expect`'s macro expansion fails to type-check as `rethrows`.
-        // swiftformat:disable:next preferKeyPath
-        #expect(rows.allSatisfy { $0.isPending })
-        #expect(service.putCalls.count == 1, "the rest of the queue will fail the same way, so it isn't worth trying")
-    }
+        @Test("both sides moved — the further page wins and a conflict notice is published")
+        func reconcileBothMovedPublishesNotice() async throws {
+            let context = try makeContext()
+            let service = MockKomgaServing()
+            let engine = ProgressionSyncEngine(service: service, modelContext: context, device: device)
 
-    @Test("a book with no local row is untouched by reconciliation")
-    func reconcileWithoutLocalRowIsNoop() throws {
-        let context = try makeContext()
-        let engine = ProgressionSyncEngine(service: MockKomgaServing(), modelContext: context, device: device)
+            // Establish a synced baseline, then a local write the server never saw.
+            engine.recordPageTurn(bookID: "b1", page: 10, pageHref: "/pages/10", mediaType: "image/jpeg")
+            await engine.flush()
+            engine.recordPageTurn(bookID: "b1", page: 15, pageHref: "/pages/15", mediaType: "image/jpeg")
 
-        engine.reconcile(with: Self.book(page: 12, readDate: .now))
+            // Meanwhile the server moved further still, from a different device.
+            engine.reconcile(with: Self.book(page: 20, readDate: Date(timeIntervalSince1970: 5000)))
 
-        #expect(try context.fetch(FetchDescriptor<Book>()).isEmpty)
-    }
+            let row = try #require(try context.fetch(FetchDescriptor<Book>()).first)
+            #expect(row.localPage == 20)
+            #expect(row.isPending == false)
 
-    @Test("both sides moved — the further page wins and a conflict notice is published")
-    func reconcileBothMovedPublishesNotice() async throws {
-        let context = try makeContext()
-        let service = MockKomgaServing()
-        let engine = ProgressionSyncEngine(service: service, modelContext: context, device: device)
+            let notice = try #require(engine.conflictNotice)
+            #expect(notice.resolvedPage == 20)
+            #expect(notice.resolvedToLocal == false)
+        }
 
-        // Establish a synced baseline, then a local write the server never saw.
-        engine.recordPageTurn(bookID: "b1", page: 10, pageHref: "/pages/10", mediaType: "image/jpeg")
-        await engine.flush()
-        engine.recordPageTurn(bookID: "b1", page: 15, pageHref: "/pages/15", mediaType: "image/jpeg")
-
-        // Meanwhile the server moved further still, from a different device.
-        engine.reconcile(with: Self.book(page: 20, readDate: Date(timeIntervalSince1970: 5000)))
-
-        let row = try #require(try context.fetch(FetchDescriptor<Book>()).first)
-        #expect(row.localPage == 20)
-        #expect(row.isPending == false)
-
-        let notice = try #require(engine.conflictNotice)
-        #expect(notice.resolvedPage == 20)
-        #expect(notice.resolvedToLocal == false)
-    }
-
-    private static func book(page: Int, readDate: Date) -> KomgaBook {
-        KomgaBook(
-            id: "b1",
-            seriesId: "s1",
-            name: "Book",
-            media: KomgaMedia(pagesCount: 40),
-            metadata: KomgaBookMetadata(title: "Book"),
-            readProgress: KomgaReadProgress(page: page, completed: false, readDate: readDate)
-        )
+        private static func book(page: Int, readDate: Date) -> KomgaBook {
+            KomgaBook(
+                id: "b1",
+                seriesId: "s1",
+                name: "Book",
+                media: KomgaMedia(pagesCount: 40),
+                metadata: KomgaBookMetadata(title: "Book"),
+                readProgress: KomgaReadProgress(page: page, completed: false, readDate: readDate)
+            )
+        }
     }
 }
 
