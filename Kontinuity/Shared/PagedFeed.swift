@@ -40,6 +40,11 @@ final class PagedFeed<Element: Identifiable & Hashable & Sendable & Decodable> {
     private(set) var totalCount = 0
 
     private var fetch: ((Int) async throws -> KomgaPage<Element>)?
+    /// Called with every fully-replaced page 0, not on a "load more" append —
+    /// what a manual refresh means for PLAN §5's "read progress for what's in
+    /// view" reconciliation. `PagedFeed` doesn't know what a `KomgaBook` is,
+    /// so it just hands the items back to whoever does.
+    private var didReplace: (([Element]) -> Void)?
     private var nextPage: Int?
     private var task: Task<Void, Never>?
 
@@ -50,8 +55,12 @@ final class PagedFeed<Element: Identifiable & Hashable & Sendable & Decodable> {
     /// Points the feed at a query and loads its first page. Calling this with a
     /// new query replaces everything — switching library must not leave the
     /// previous library's covers on screen.
-    func start(_ fetch: @escaping (Int) async throws -> KomgaPage<Element>) {
+    func start(
+        _ fetch: @escaping (Int) async throws -> KomgaPage<Element>,
+        didReplace: (([Element]) -> Void)? = nil
+    ) {
         self.fetch = fetch
+        self.didReplace = didReplace
         items = []
         totalCount = 0
         nextPage = nil
@@ -96,6 +105,7 @@ final class PagedFeed<Element: Identifiable & Hashable & Sendable & Decodable> {
 
                 if replacing {
                     items = result.content
+                    didReplace?(result.content)
                 } else {
                     // Komga pages a live query: a scan finishing mid-scroll can
                     // shift items across page boundaries and hand us one twice.

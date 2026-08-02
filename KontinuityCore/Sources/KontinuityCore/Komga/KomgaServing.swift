@@ -69,17 +69,8 @@ public protocol KomgaServing: Sendable {
     /// the href already carries its own query string.
     func pageImageData(at href: String) async throws -> Data
 
-    /// `PUT .../progression` — a direct, best-effort write made after each page
-    /// turn. Phase 4 wraps this in an offline outbox with conflict reconciliation;
-    /// today a failure (including the 409 clock guard) is simply swallowed by the
-    /// caller rather than surfaced, since there's nowhere useful to show it yet.
-    func putProgression(
-        bookID: String,
-        page: Int,
-        pageHref: String,
-        mediaType: String,
-        device: KomgaDevice
-    ) async throws
+    /// `PUT .../progression`.
+    func putProgression(bookID: String, write: ProgressionWrite, device: KomgaDevice) async throws
 }
 
 /// The `device.id`/`device.name` pair every progression write carries
@@ -92,6 +83,26 @@ public struct KomgaDevice: Sendable, Hashable {
     public init(id: UUID, name: String) {
         self.id = id
         self.name = name
+    }
+}
+
+/// One page turn's worth of progression — the locator half of the PUT body
+/// (KOMGA-API §4), bundled for the same reason as ``KomgaDevice``. `readDate`
+/// is the timestamp of the page turn itself, not of the call — an outbox
+/// entry flushed later must carry the original turn time so Komga's
+/// monotonic clock guard sees the write in the order it actually happened,
+/// not the order it was sent.
+public struct ProgressionWrite: Sendable, Hashable {
+    public let page: Int
+    public let pageHref: String
+    public let mediaType: String
+    public let readDate: Date
+
+    public init(page: Int, pageHref: String, mediaType: String, readDate: Date) {
+        self.page = page
+        self.pageHref = pageHref
+        self.mediaType = mediaType
+        self.readDate = readDate
     }
 }
 

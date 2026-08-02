@@ -138,13 +138,7 @@
             Fixtures.pageImage(at: href)
         }
 
-        func putProgression(
-            bookID _: String,
-            page _: Int,
-            pageHref _: String,
-            mediaType _: String,
-            device _: KomgaDevice
-        ) async throws {
+        func putProgression(bookID _: String, write _: ProgressionWrite, device _: KomgaDevice) async throws {
             // Verifying the real write path is LiveKomgaTests's job, not the
             // stub's — the UI tests only need paging and the resume position to
             // work, neither of which depends on this landing anywhere.

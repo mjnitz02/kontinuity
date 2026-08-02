@@ -257,11 +257,44 @@ struct LiveKomgaTests {
 
         try await live.putProgression(
             bookID: book.id,
-            page: 1,
-            pageHref: firstPage.href,
-            mediaType: firstPage.type,
+            write: ProgressionWrite(page: 1, pageHref: firstPage.href, mediaType: firstPage.type, readDate: .now),
             device: KomgaDevice(id: UUID(), name: "Kontinuity integration test")
         )
+        let refetched = try await live.book(id: book.id)
+        #expect(refetched.readProgress?.page == 1)
+    }
+
+    @Test("a PUT with an older `modified` than what's stored gets a real 409")
+    func progressionConflictIsReal() async throws {
+        guard let book = try await anyReadableBook() else { return }
+        let key = try #require(LiveKomga.apiKey)
+        let live = try client(.apiKey(key))
+        let manifest = try await live.divinaManifest(forBook: book.id)
+        let firstPage = try #require(manifest.readingOrder.first)
+
+        let device = KomgaDevice(id: UUID(), name: "Kontinuity conflict test")
+
+        // Establish a baseline "now" write, then try to write an older one —
+        // the exact shape PLAN §5's outbox must never retry (KOMGA-API §4).
+        try await live.putProgression(
+            bookID: book.id,
+            write: ProgressionWrite(page: 1, pageHref: firstPage.href, mediaType: firstPage.type, readDate: .now),
+            device: device
+        )
+
+        await #expect(throws: KomgaError.conflict) {
+            try await live.putProgression(
+                bookID: book.id,
+                write: ProgressionWrite(
+                    page: 2, pageHref: firstPage.href, mediaType: firstPage.type,
+                    readDate: Date().addingTimeInterval(-3600)
+                ),
+                device: device
+            )
+        }
+
+        // And the rejected write must not have landed — the stored position
+        // is still the baseline, proving there's nothing to "retry" toward.
         let refetched = try await live.book(id: book.id)
         #expect(refetched.readProgress?.page == 1)
     }

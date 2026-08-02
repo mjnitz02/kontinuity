@@ -34,6 +34,8 @@ private struct ConnectedView: View {
 
     @Environment(\.secretStore) private var secrets
     @Environment(\.komgaProvider) private var provider
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State private var session: KomgaSession?
     @State private var failure: String?
 
@@ -58,10 +60,17 @@ private struct ConnectedView: View {
                     failure = "The stored API key is missing."
                     return
                 }
-                session = KomgaSession(server: server, service: service)
+                session = KomgaSession(server: server, service: service, modelContext: modelContext)
             } catch {
                 failure = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
             }
+        }
+        // One of PLAN §5's five flush triggers: a backgrounded app can be
+        // killed by the system at any moment, so any pending progress needs
+        // to be on its way to Komga before that happens, not after.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .background, let session else { return }
+            Task { await session.sync.flush() }
         }
     }
 
@@ -101,6 +110,15 @@ private struct BrowseSplitView: View {
             NavigationStack(path: $path) {
                 detail
             }
+            // One banner regardless of which screen's refresh triggered the
+            // reconciliation — simpler than threading it through every
+            // screen individually, including the reader.
+            .overlay(alignment: .top) {
+                if let notice = session.sync.conflictNotice {
+                    ConflictNoticeBanner(notice: notice)
+                }
+            }
+            .animation(.default, value: session.sync.conflictNotice)
         }
         .task { await session.loadLibraries() }
         // A pushed series belongs to the root it was reached from; leaving it on
@@ -191,5 +209,5 @@ private struct BrowseSplitView: View {
 
 #Preview("Not connected") {
     RootView()
-        .modelContainer(for: Server.self, inMemory: true)
+        .modelContainer(for: [Server.self, Book.self], inMemory: true)
 }

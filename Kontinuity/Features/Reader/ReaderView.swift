@@ -13,25 +13,18 @@ import SwiftUI
 struct ReaderView: View {
     let book: KomgaBook
     let service: any KomgaServing
-    let deviceID: UUID
-    let deviceName: String
+    let sync: ProgressionSyncEngine
 
     @Environment(\.dismiss) private var dismiss
     @State private var model: ReaderModel
     @State private var loader: PageImageLoader
     @State private var chromeVisible = true
 
-    init(book: KomgaBook, service: any KomgaServing, deviceID: UUID, deviceName: String) {
+    init(book: KomgaBook, service: any KomgaServing, sync: ProgressionSyncEngine) {
         self.book = book
         self.service = service
-        self.deviceID = deviceID
-        self.deviceName = deviceName
-        _model = State(initialValue: ReaderModel(
-            book: book,
-            service: service,
-            deviceID: deviceID,
-            deviceName: deviceName
-        ))
+        self.sync = sync
+        _model = State(initialValue: ReaderModel(book: book, service: service, sync: sync))
         _loader = State(initialValue: PageImageLoader(service: service))
     }
 
@@ -138,7 +131,7 @@ struct ReaderView: View {
     /// full-screen cover rather than dismissing and re-presenting.
     private func openNextBook(_ next: KomgaBook) {
         model.flushProgress()
-        model = ReaderModel(book: next, service: service, deviceID: deviceID, deviceName: deviceName)
+        model = ReaderModel(book: next, service: service, sync: sync)
         Task { await model.load() }
     }
 

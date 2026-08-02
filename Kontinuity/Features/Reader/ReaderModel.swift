@@ -2,10 +2,11 @@
 //  ReaderModel.swift
 //  Kontinuity
 //
-//  Owns the manifest, the current position, and progress sync. Progress sync is
-//  a direct, best-effort PUT per page turn (debounced) — no outbox, no 409
-//  reconciliation UI. That robustness is phase 4's job; resuming already works
-//  today via the book's existing `readProgress.page` from the browse API.
+//  Owns the manifest and the current position. Progress sync itself — the
+//  outbox, the debounce, the 409/offline handling — lives in
+//  `ProgressionSyncEngine` (phase 4); this model just records page turns into
+//  it and asks it to resolve where to resume, rather than trusting whatever
+//  `book.readProgress` happened to be when this screen was reached.
 //
 
 import KontinuityCore
@@ -17,8 +18,7 @@ import SwiftUI
 final class ReaderModel {
     let book: KomgaBook
     private let service: any KomgaServing
-    private let deviceID: UUID
-    private let deviceName: String
+    private let sync: ProgressionSyncEngine
 
     private(set) var manifest: KomgaDivinaManifest?
     private(set) var spreads: [PageSpread] = []
@@ -28,21 +28,19 @@ final class ReaderModel {
 
     private var mode: LayoutMode = .fitPage
     private var hasLoadedInitialPosition = false
-    private var progressTask: Task<Void, Never>?
     private var lastSentPage: Int?
 
     var currentSpreadIndex: Int = 0 {
         didSet {
             guard oldValue != currentSpreadIndex, hasLoadedInitialPosition else { return }
-            schedulePUT(immediate: false)
+            sendProgress()
         }
     }
 
-    init(book: KomgaBook, service: any KomgaServing, deviceID: UUID, deviceName: String) {
+    init(book: KomgaBook, service: any KomgaServing, sync: ProgressionSyncEngine) {
         self.book = book
         self.service = service
-        self.deviceID = deviceID
-        self.deviceName = deviceName
+        self.sync = sync
     }
 
     var pageCount: Int {
@@ -94,10 +92,10 @@ final class ReaderModel {
         currentSpreadIndex -= 1
     }
 
-    /// Cancels any pending debounced write and tries once immediately —
-    /// best-effort, for the reader dismissing.
+    /// Pushes any unpushed progress immediately rather than waiting for the
+    /// engine's idle debounce — for the reader dismissing.
     func flushProgress() {
-        schedulePUT(immediate: true)
+        Task { await sync.flush() }
     }
 
     // MARK: - Layout
@@ -112,16 +110,21 @@ final class ReaderModel {
         spreads = PageLayout.spreads(for: pages, mode: mode, progression: .ltr)
     }
 
+    /// Resolves via the sync engine rather than trusting `book.readProgress`
+    /// outright — that snapshot may be stale if this device has unsynced or
+    /// conflicting local progress for the book (phase 4's whole point).
     private func initialSpreadIndex() -> Int {
-        guard let page = book.readProgress?.page, page > 1, pageCount > 0 else { return 0 }
+        let resolvedPage = sync.resolvedStartPage(for: book) ?? book.readProgress?.page
+        guard let page = resolvedPage, page > 1, pageCount > 0 else { return 0 }
         let pageIndex = min(page - 1, pageCount - 1)
         return spreads.firstIndex { $0.pageIndices.contains(pageIndex) } ?? 0
     }
 
     // MARK: - Progress
 
-    private func schedulePUT(immediate: Bool) {
-        progressTask?.cancel()
+    /// Records the page turn with the sync engine, which writes it locally at
+    /// once and owns the debounced push from here (PLAN §5).
+    private func sendProgress() {
         guard let manifest,
               spreads.indices.contains(currentSpreadIndex),
               let lastPageIndex = spreads[currentSpreadIndex].pageIndices.max(),
@@ -133,23 +136,7 @@ final class ReaderModel {
         lastSentPage = page
 
         let link = manifest.readingOrder[lastPageIndex]
-        let service = service
-        let bookID = book.id
-        let device = KomgaDevice(id: deviceID, name: deviceName)
-
-        progressTask = Task {
-            if !immediate {
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { return }
-            }
-            try? await service.putProgression(
-                bookID: bookID,
-                page: page,
-                pageHref: link.href,
-                mediaType: link.type,
-                device: device
-            )
-        }
+        sync.recordPageTurn(bookID: book.id, page: page, pageHref: link.href, mediaType: link.type)
     }
 
     // MARK: - Edge of book

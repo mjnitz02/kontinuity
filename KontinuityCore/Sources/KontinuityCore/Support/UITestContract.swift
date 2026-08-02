@@ -114,6 +114,9 @@ public enum AID {
     public static let bookDetailState = "bookDetail.state"
     public static let bookDetailRead = "bookDetail.read"
 
+    /// Sync
+    public static let syncConflictNotice = "sync.conflictNotice"
+
     // Reader
     /// The zoomable page surface itself — a UI test taps normalized coordinates
     /// on it for the left/right turn zones rather than needing separate

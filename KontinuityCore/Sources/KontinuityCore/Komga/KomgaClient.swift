@@ -170,17 +170,11 @@ public struct KomgaClient: KomgaServing {
         return data
     }
 
-    public func putProgression(
-        bookID: String,
-        page: Int,
-        pageHref: String,
-        mediaType: String,
-        device: KomgaDevice
-    ) async throws {
+    public func putProgression(bookID: String, write: ProgressionWrite, device: KomgaDevice) async throws {
         let body = KomgaProgressionRequest(
-            modified: KomgaDate.format(.now),
+            modified: KomgaDate.format(write.readDate),
             device: .init(id: device.id.uuidString, name: device.name),
-            locator: .init(href: pageHref, type: mediaType, locations: .init(position: page))
+            locator: .init(href: write.pageHref, type: write.mediaType, locations: .init(position: write.page))
         )
         var request = makeRequest(path: "/api/v1/books/\(bookID)/progression", method: "PUT")
         request.httpBody = try JSONEncoder().encode(body)

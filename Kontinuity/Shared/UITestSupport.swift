@@ -22,7 +22,7 @@
         /// state in the simulator's container.
         static func makeContainer(for mode: UITestMode) throws -> ModelContainer {
             let container = try ModelContainer(
-                for: Server.self,
+                for: Server.self, Book.self,
                 configurations: ModelConfiguration(isStoredInMemoryOnly: true)
             )
 

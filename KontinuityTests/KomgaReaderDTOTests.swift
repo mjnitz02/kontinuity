@@ -63,11 +63,15 @@ struct KomgaReaderDTOTests {
     @Test("PUTs the progression body KOMGA-API §4 describes")
     func putProgressionBodyShape() async throws {
         let (client, transport) = try makeClient([.status(204)])
+        // A fixed, non-`.now` date — the outbox flushes an entry well after the
+        // page turn it describes, so `modified` must be the turn's own
+        // timestamp rather than whenever this call happens to run.
+        let turnDate = Date(timeIntervalSince1970: 1_780_000_000)
         try await client.putProgression(
             bookID: "b1",
-            page: 42,
-            pageHref: "/opds/v2/books/b1/pages/42",
-            mediaType: "image/jpeg",
+            write: ProgressionWrite(
+                page: 42, pageHref: "/opds/v2/books/b1/pages/42", mediaType: "image/jpeg", readDate: turnDate
+            ),
             device: KomgaDevice(
                 id: #require(UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")),
                 name: "Test iPad"
@@ -80,7 +84,8 @@ struct KomgaReaderDTOTests {
 
         let body = try #require(request.body)
         let object = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-        #expect(object["modified"] is String)
+        let modified = try #require(object["modified"] as? String)
+        #expect(KomgaDate.parse(modified) == turnDate)
 
         let device = try #require(object["device"] as? [String: String])
         #expect(device["id"] == "00000000-0000-0000-0000-0000000000AA")

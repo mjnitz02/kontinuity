@@ -51,12 +51,7 @@ struct BookDetailView: View {
         .refreshable { await reload() }
         .task(id: book.id) { await reload() }
         .fullScreenCover(isPresented: $showingReader) {
-            ReaderView(
-                book: current,
-                service: session.service,
-                deviceID: session.server.deviceID,
-                deviceName: session.server.deviceName
-            )
+            ReaderView(book: current, service: session.service, sync: session.sync)
         }
     }
 
@@ -139,7 +134,12 @@ struct BookDetailView: View {
     }
 
     private func reload() async {
-        refreshed = try? await session.service.book(id: book.id)
+        // Manual refresh trigger #5 (PLAN §5): push anything pending first, so
+        // the fetch that follows reflects this device's own latest write too.
+        await session.sync.flush()
+        guard let fetched = try? await session.service.book(id: book.id) else { return }
+        refreshed = fetched
+        session.sync.reconcile(with: fetched)
     }
 
     private var unreadableReason: String {

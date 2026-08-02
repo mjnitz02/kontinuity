@@ -39,9 +39,13 @@ struct SeriesDetailView: View {
         .refreshable { await reload() }
         .task(id: series.id) {
             let service = session.service
+            let sync = session.sync
             let id = series.id
             feed.start { page in
                 try await service.books(inSeries: id, matching: BookQuery(page: page))
+            }
+            didReplace: { books in
+                books.forEach { sync.reconcile(with: $0) }
             }
             refreshed = try? await service.series(id: id)
         }
@@ -155,6 +159,7 @@ struct SeriesDetailView: View {
     }
 
     private func reload() async {
+        await session.sync.flush()
         refreshed = try? await session.service.series(id: series.id)
         await feed.refresh()
     }

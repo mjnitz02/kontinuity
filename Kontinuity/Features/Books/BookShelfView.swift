@@ -67,9 +67,13 @@ struct BookShelfView: View {
         }
         .overlay { status }
         .navigationTitle(shelf.title)
-        .refreshable { await feed.refresh() }
+        .refreshable {
+            await session.sync.flush()
+            await feed.refresh()
+        }
         .task(id: Query(shelf: shelf, libraryID: libraryID)) {
             let service = session.service
+            let sync = session.sync
             let library = libraryID
             let shelf = shelf
             feed.start { page in
@@ -78,6 +82,8 @@ struct BookShelfView: View {
                 case .keepReading: try await service.keepReading(matching: query)
                 case .onDeck: try await service.onDeck(matching: query)
                 }
+            } didReplace: { books in
+                books.forEach { sync.reconcile(with: $0) }
             }
         }
         .navigationDestination(for: KomgaBook.self) { book in

@@ -10,6 +10,7 @@
 
 import Foundation
 import KontinuityCore
+import SwiftData
 import SwiftUI
 
 @MainActor
@@ -18,16 +19,22 @@ final class KomgaSession {
     let server: Server
     let service: any KomgaServing
     let thumbnails: ThumbnailLoader
+    let sync: ProgressionSyncEngine
 
     /// The server's libraries, loaded once for the sidebar. Small and stable —
     /// a home Komga has a handful — so there's no paging here.
     private(set) var libraries: [KomgaLibrary] = []
     private(set) var librariesError: String?
 
-    init(server: Server, service: any KomgaServing) {
+    init(server: Server, service: any KomgaServing, modelContext: ModelContext) {
         self.server = server
         self.service = service
         thumbnails = ThumbnailLoader(service: service)
+        sync = ProgressionSyncEngine(
+            service: service,
+            modelContext: modelContext,
+            device: KomgaDevice(id: server.deviceID, name: server.deviceName)
+        )
     }
 
     func loadLibraries() async {

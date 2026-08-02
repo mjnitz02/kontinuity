@@ -33,7 +33,7 @@ struct KontinuityApp: App {
                     return
                 }
             #endif
-            container = try ModelContainer(for: Server.self)
+            container = try ModelContainer(for: Server.self, Book.self)
         } catch {
             // Nothing sensible to fall back to: without a store the app can't
             // remember a server, and silently running in-memory would look like
