@@ -20,13 +20,19 @@ final class KomgaSession {
     let service: any KomgaServing
     let thumbnails: ThumbnailLoader
     let sync: ProgressionSyncEngine
+    let downloads: DownloadCoordinator
 
     /// The server's libraries, loaded once for the sidebar. Small and stable —
     /// a home Komga has a handful — so there's no paging here.
     private(set) var libraries: [KomgaLibrary] = []
     private(set) var librariesError: String?
 
-    init(server: Server, service: any KomgaServing, modelContext: ModelContext) {
+    init(
+        server: Server,
+        service: any KomgaServing,
+        modelContext: ModelContext,
+        downloadSessionConfiguration: URLSessionConfiguration = DownloadSessionProvider.live.makeConfiguration()
+    ) {
         self.server = server
         self.service = service
         thumbnails = ThumbnailLoader(service: service)
@@ -35,6 +41,21 @@ final class KomgaSession {
             modelContext: modelContext,
             device: KomgaDevice(id: server.deviceID, name: server.deviceName)
         )
+        downloads = DownloadCoordinator(
+            service: service,
+            modelContext: modelContext,
+            sessionConfiguration: downloadSessionConfiguration
+        )
+    }
+
+    /// The choke point every "push then refresh" trigger should call instead
+    /// of `sync.flush()` directly — a book whose completion is confirmed
+    /// synced by the flush is exactly what auto-remove-on-finish is watching
+    /// for (PLAN §6), and this is the one place that's checked regardless of
+    /// which of the five triggers fired.
+    func flushAndReconcileDownloads() async {
+        await sync.flush()
+        downloads.reapAutoRemovable()
     }
 
     func loadLibraries() async {
@@ -67,6 +88,23 @@ struct KomgaProvider {
 
 extension EnvironmentValues {
     @Entry var komgaProvider: KomgaProvider = .live
+    @Entry var downloadSessionProvider: DownloadSessionProvider = .live
+}
+
+/// How `DownloadCoordinator` gets its transport. Live is a background
+/// `URLSession` configuration so transfers survive app suspension (PLAN §6);
+/// `UITestSupport` substitutes a plain ephemeral one, since a UI test's stub
+/// server has no real background transfer to survive.
+struct DownloadSessionProvider {
+    var makeConfiguration: () -> URLSessionConfiguration
+
+    static let live = DownloadSessionProvider {
+        let bundleID = Bundle.main.bundleIdentifier ?? "org.mattnitzken.Kontinuity"
+        let configuration = URLSessionConfiguration.background(withIdentifier: "\(bundleID).downloads")
+        configuration.sessionSendsLaunchEvents = true
+        configuration.isDiscretionary = false
+        return configuration
+    }
 }
 
 extension URLSession {

@@ -299,6 +299,35 @@ struct LiveKomgaTests {
         #expect(refetched.readProgress?.page == 1)
     }
 
+    // MARK: - Download
+
+    /// The empirical check behind `CBZArchive`'s natural-sort assumption
+    /// (KOMGA-API has nothing documenting archive-entry order): a real CBZ's
+    /// filenames, once junk is filtered and sorted numerically, should
+    /// decompress to exactly as many pages as Komga's own manifest reports.
+    @Test("a downloaded CBZ decompresses to the same page count as the manifest")
+    func downloadedPageCountMatchesManifest() async throws {
+        guard let book = try await anyReadableBook() else { return }
+        let key = try #require(LiveKomga.apiKey)
+        let live = try client(.apiKey(key))
+
+        let manifest = try await live.divinaManifest(forBook: book.id)
+        guard !manifest.readingOrder.isEmpty else { return }
+
+        let fileData: Data
+        do {
+            fileData = try await live.fileData(forBook: book.id)
+        } catch KomgaError.forbidden {
+            // This account lacks FILE_DOWNLOAD — exactly the case the
+            // download engine's per-page fallback exists for, not this test.
+            return
+        }
+
+        #expect(fileData.count > 1000)
+        let pages = try CBZArchive.extractImagePages(from: fileData)
+        #expect(pages.count == manifest.readingOrder.count)
+    }
+
     @Test("the on-deck and keep-reading feeds decode")
     func liveFeeds() async throws {
         let key = try #require(LiveKomga.apiKey)

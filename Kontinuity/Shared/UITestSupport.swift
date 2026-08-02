@@ -50,6 +50,13 @@
         /// and a UI test must not leave one in the real Keychain — nor read one a
         /// previous run left behind.
         static let secrets: any SecretStoring = InMemorySecretStore()
+
+        /// A background session identifier is process-global — reusing the
+        /// real one across repeated UI test launches risks colliding with a
+        /// stale session from a previous run. The stub's "server" has no
+        /// actual background transfer to survive suspension anyway, so a
+        /// plain ephemeral session is both simpler and correct here.
+        static let downloadSessionProvider = DownloadSessionProvider { .ephemeral }
     }
 
 #endif

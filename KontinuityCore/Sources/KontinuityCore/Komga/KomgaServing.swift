@@ -71,6 +71,20 @@ public protocol KomgaServing: Sendable {
 
     /// `PUT .../progression`.
     func putProgression(bookID: String, write: ProgressionWrite, device: KomgaDevice) async throws
+
+    // MARK: - Download (phase 5)
+
+    /// `GET /opds/v2/books/{id}/file` — the whole CBZ, one request. Requires
+    /// role `FILE_DOWNLOAD`; the download coordinator falls back to per-page
+    /// fetches through ``pageImageData(at:)`` on a 403 (KOMGA-API §6).
+    func fileData(forBook bookID: String) async throws -> Data
+
+    /// The authenticated request for the same endpoint, built but not sent.
+    /// The download coordinator hands this to its own dedicated `URLSession`
+    /// — a background configuration in production, so the transfer survives
+    /// app suspension (PLAN §6) — rather than the service's own foreground
+    /// session, which ``fileData(forBook:)`` uses.
+    func fileDownloadRequest(forBook bookID: String) -> URLRequest
 }
 
 /// The `device.id`/`device.name` pair every progression write carries

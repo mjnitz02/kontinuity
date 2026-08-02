@@ -117,6 +117,19 @@ public enum AID {
     /// Sync
     public static let syncConflictNotice = "sync.conflictNotice"
 
+    // Downloads
+    public static let seriesDownloadUnread = "seriesDetail.downloadUnread"
+    public static let bookDetailDownload = "bookDetail.download"
+    public static let downloadsList = "downloads.list"
+    public static let downloadsEmpty = "downloads.empty"
+    public static let downloadsCapPicker = "downloads.capPicker"
+    public static let downloadsAutoRemoveToggle = "downloads.autoRemoveToggle"
+
+    /// One row per downloaded/downloading book, keyed by the book's id.
+    public static func downloadRow(_ id: String) -> String {
+        "downloads.row.\(id)"
+    }
+
     // Reader
     /// The zoomable page surface itself — a UI test taps normalized coordinates
     /// on it for the left/right turn zones rather than needing separate

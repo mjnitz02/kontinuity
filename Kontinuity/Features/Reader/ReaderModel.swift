@@ -8,6 +8,10 @@
 //  it and asks it to resolve where to resume, rather than trusting whatever
 //  `book.readProgress` happened to be when this screen was reached.
 //
+//  READER-DESIGN §1: a downloaded book reads purely from disk, no network at
+//  all — `load()` checks `LocalBookStore` first and only falls back to the
+//  network DIVINA manifest when the book isn't downloaded.
+//
 
 import KontinuityCore
 import Observation
@@ -19,13 +23,17 @@ final class ReaderModel {
     let book: KomgaBook
     private let service: any KomgaServing
     private let sync: ProgressionSyncEngine
+    private let downloads: DownloadCoordinator
+    private let localStore = LocalBookStore()
 
-    private(set) var manifest: KomgaDivinaManifest?
+    private(set) var pageSources: [PageSource] = []
     private(set) var spreads: [PageSpread] = []
     private(set) var loadError: String?
     private(set) var isLoading = true
     private(set) var nextBook: KomgaBook?
 
+    private var localManifest: LocalBookManifest?
+    private var remoteManifest: KomgaDivinaManifest?
     private var mode: LayoutMode = .fitPage
     private var hasLoadedInitialPosition = false
     private var lastSentPage: Int?
@@ -37,14 +45,15 @@ final class ReaderModel {
         }
     }
 
-    init(book: KomgaBook, service: any KomgaServing, sync: ProgressionSyncEngine) {
+    init(book: KomgaBook, service: any KomgaServing, sync: ProgressionSyncEngine, downloads: DownloadCoordinator) {
         self.book = book
         self.service = service
         self.sync = sync
+        self.downloads = downloads
     }
 
     var pageCount: Int {
-        manifest?.readingOrder.count ?? 0
+        pageSources.count
     }
 
     var isAtLastSpread: Bool {
@@ -54,15 +63,31 @@ final class ReaderModel {
     func load() async {
         isLoading = true
         loadError = nil
+
+        if let localManifest = localStore.manifest(forBook: book.id) {
+            self.localManifest = localManifest
+            remoteManifest = nil
+            pageSources = Self.localPageSources(bookID: book.id, manifest: localManifest, store: localStore)
+            finishLoad()
+            return
+        }
+
         do {
             let manifest = try await service.divinaManifest(forBook: book.id)
-            self.manifest = manifest
-            recomputeSpreads()
-            currentSpreadIndex = initialSpreadIndex()
-            hasLoadedInitialPosition = true
+            remoteManifest = manifest
+            localManifest = nil
+            pageSources = manifest.readingOrder.map { .remote($0) }
+            finishLoad()
         } catch {
             loadError = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
+            isLoading = false
         }
+    }
+
+    private func finishLoad() {
+        recomputeSpreads()
+        currentSpreadIndex = initialSpreadIndex()
+        hasLoadedInitialPosition = true
         isLoading = false
     }
 
@@ -93,17 +118,26 @@ final class ReaderModel {
     }
 
     /// Pushes any unpushed progress immediately rather than waiting for the
-    /// engine's idle debounce — for the reader dismissing.
+    /// engine's idle debounce — for the reader dismissing. Also the moment a
+    /// just-finished, now-synced download becomes eligible for auto-remove
+    /// (PLAN §6), so it rides along here too.
     func flushProgress() {
-        Task { await sync.flush() }
+        Task {
+            await sync.flush()
+            downloads.reapAutoRemovable()
+        }
     }
 
     // MARK: - Layout
 
     private func recomputeSpreads() {
-        guard let manifest else { return }
-        let pages = manifest.readingOrder.map {
-            PageGeometry(width: Double($0.width ?? 0), height: Double($0.height ?? 0))
+        let pages: [PageGeometry] = if let localManifest {
+            localManifest.pages.map { PageGeometry(width: Double($0.width ?? 0), height: Double($0.height ?? 0)) }
+        } else if let remoteManifest {
+            remoteManifest.readingOrder
+                .map { PageGeometry(width: Double($0.width ?? 0), height: Double($0.height ?? 0)) }
+        } else {
+            []
         }
         // TODO: read the series' reading direction once RTL is supported
         // (READER-DESIGN §1) — pinned to LTR everywhere for now.
@@ -125,18 +159,30 @@ final class ReaderModel {
     /// Records the page turn with the sync engine, which writes it locally at
     /// once and owns the debounced push from here (PLAN §5).
     private func sendProgress() {
-        guard let manifest,
-              spreads.indices.contains(currentSpreadIndex),
+        guard spreads.indices.contains(currentSpreadIndex),
               let lastPageIndex = spreads[currentSpreadIndex].pageIndices.max(),
-              manifest.readingOrder.indices.contains(lastPageIndex)
+              pageSources.indices.contains(lastPageIndex)
         else { return }
 
         let page = lastPageIndex + 1
         guard lastSentPage != page else { return }
         lastSentPage = page
 
-        let link = manifest.readingOrder[lastPageIndex]
-        sync.recordPageTurn(bookID: book.id, page: page, pageHref: link.href, mediaType: link.type)
+        let locator = progressionLocator(forPageIndex: lastPageIndex, page: page)
+        sync.recordPageTurn(bookID: book.id, page: page, pageHref: locator.href, mediaType: locator.mediaType)
+    }
+
+    /// Komga stores but never validates the DIVINA locator's href/type
+    /// against the manifest (KOMGA-API §4), so reading offline reconstructs
+    /// the same href the network manifest would have given rather than
+    /// needing one persisted on disk.
+    private func progressionLocator(forPageIndex index: Int, page: Int) -> (href: String, mediaType: String) {
+        switch pageSources[index] {
+        case let .remote(link):
+            (link.href, link.type)
+        case let .local(_, mediaType):
+            ("/opds/v2/books/\(book.id)/pages/\(page)?contentNegotiation=false", mediaType)
+        }
     }
 
     // MARK: - Edge of book
@@ -153,5 +199,18 @@ final class ReaderModel {
         guard let currentIndex = ordered.firstIndex(where: { $0.id == book.id }) else { return }
         let nextIndex = ordered.index(after: currentIndex)
         nextBook = ordered.indices.contains(nextIndex) ? ordered[nextIndex] : nil
+    }
+
+    // MARK: - Local page sources
+
+    private static func localPageSources(
+        bookID: String,
+        manifest: LocalBookManifest,
+        store: LocalBookStore
+    ) -> [PageSource] {
+        manifest.pages.indices.compactMap { index in
+            guard let url = store.pageURL(forBook: bookID, index: index) else { return nil }
+            return .local(url: url, mediaType: manifest.pages[index].mediaType)
+        }
     }
 }

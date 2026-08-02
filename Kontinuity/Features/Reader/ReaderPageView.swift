@@ -13,7 +13,7 @@ import UIKit
 
 struct ReaderPageView: View {
     let spread: PageSpread
-    let readingOrder: [KomgaPageLink]
+    let pageSources: [PageSource]
     let loader: PageImageLoader
     let onTapZone: (ZoomableImageView.TapZone) -> Void
 
@@ -36,8 +36,8 @@ struct ReaderPageView: View {
 
     private func loadImage() async -> UIImage? {
         var images: [UIImage] = []
-        for index in spread.pageIndices where readingOrder.indices.contains(index) {
-            if let image = await loader.image(forPage: index, link: readingOrder[index]) {
+        for index in spread.pageIndices where pageSources.indices.contains(index) {
+            if let image = await loader.image(forPage: index, source: pageSources[index]) {
                 images.append(image)
             }
         }

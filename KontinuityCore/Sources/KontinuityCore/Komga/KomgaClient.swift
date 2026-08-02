@@ -182,6 +182,26 @@ public struct KomgaClient: KomgaServing {
         _ = try await send(request)
     }
 
+    // MARK: - KomgaServing: download
+
+    public func fileData(forBook bookID: String) async throws -> Data {
+        guard let data = try await send(fileDownloadRequest(forBook: bookID)) else {
+            throw KomgaError.decoding(description: "Komga returned no file data for book \(bookID).")
+        }
+        return data
+    }
+
+    public func fileDownloadRequest(forBook bookID: String) -> URLRequest {
+        // Not `makeRequest`: this is a raw byte stream, not JSON, and the
+        // default `Accept: application/json` has already 406'd one endpoint
+        // that didn't expect it (the DIVINA manifest, see `divinaManifest`).
+        var request = URLRequest(url: address.url(path: "/opds/v2/books/\(bookID)/file"))
+        request.httpMethod = "GET"
+        request.setValue(AppInfo.userAgent, forHTTPHeaderField: "User-Agent")
+        applyAuthentication(to: &request)
+        return request
+    }
+
     // MARK: - Request plumbing
 
     private func makeRequest(path: String, method: String, query: [URLQueryItem] = []) -> URLRequest {
@@ -190,6 +210,14 @@ public struct KomgaClient: KomgaServing {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(AppInfo.userAgent, forHTTPHeaderField: "User-Agent")
         return request
+    }
+
+    /// Factored out of `send` so ``fileDownloadRequest(forBook:)`` can build a
+    /// fully authenticated request synchronously, without performing I/O.
+    private func applyAuthentication(to request: inout URLRequest) {
+        if let header = credential.header {
+            request.setValue(header.value, forHTTPHeaderField: header.field)
+        }
     }
 
     private func get<T: Decodable>(
@@ -215,8 +243,8 @@ public struct KomgaClient: KomgaServing {
     @discardableResult
     private func send(_ request: URLRequest, authenticated: Bool = true) async throws -> Data? {
         var request = request
-        if authenticated, let header = credential.header {
-            request.setValue(header.value, forHTTPHeaderField: header.field)
+        if authenticated {
+            applyAuthentication(to: &request)
         }
 
         let data: Data

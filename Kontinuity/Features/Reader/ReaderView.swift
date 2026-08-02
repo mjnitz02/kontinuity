@@ -14,17 +14,19 @@ struct ReaderView: View {
     let book: KomgaBook
     let service: any KomgaServing
     let sync: ProgressionSyncEngine
+    let downloads: DownloadCoordinator
 
     @Environment(\.dismiss) private var dismiss
     @State private var model: ReaderModel
     @State private var loader: PageImageLoader
     @State private var chromeVisible = true
 
-    init(book: KomgaBook, service: any KomgaServing, sync: ProgressionSyncEngine) {
+    init(book: KomgaBook, service: any KomgaServing, sync: ProgressionSyncEngine, downloads: DownloadCoordinator) {
         self.book = book
         self.service = service
         self.sync = sync
-        _model = State(initialValue: ReaderModel(book: book, service: service, sync: sync))
+        self.downloads = downloads
+        _model = State(initialValue: ReaderModel(book: book, service: service, sync: sync, downloads: downloads))
         _loader = State(initialValue: PageImageLoader(service: service))
     }
 
@@ -37,7 +39,15 @@ struct ReaderView: View {
         .background(Color.black)
         .statusBar(hidden: true)
         .task { await model.load() }
-        .onDisappear { model.flushProgress() }
+        // Retention/auto-remove must never delete the book currently open
+        // (PLAN §6) — this is how the coordinator knows which one that is.
+        .onAppear { downloads.openBookID = book.id }
+        .onDisappear {
+            model.flushProgress()
+            if downloads.openBookID == book.id {
+                downloads.openBookID = nil
+            }
+        }
     }
 
     @ViewBuilder
@@ -57,7 +67,7 @@ struct ReaderView: View {
                 ForEach(Array(model.spreads.enumerated()), id: \.offset) { offset, spread in
                     ReaderPageView(
                         spread: spread,
-                        readingOrder: model.manifest?.readingOrder ?? [],
+                        pageSources: model.pageSources,
                         loader: loader,
                         onTapZone: handleTapZone
                     )
@@ -131,7 +141,10 @@ struct ReaderView: View {
     /// full-screen cover rather than dismissing and re-presenting.
     private func openNextBook(_ next: KomgaBook) {
         model.flushProgress()
-        model = ReaderModel(book: next, service: service, sync: sync)
+        if downloads.openBookID == book.id {
+            downloads.openBookID = next.id
+        }
+        model = ReaderModel(book: next, service: service, sync: sync, downloads: downloads)
         Task { await model.load() }
     }
 

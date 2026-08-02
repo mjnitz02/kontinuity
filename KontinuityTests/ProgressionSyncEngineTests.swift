@@ -15,12 +15,12 @@ import Testing
 @testable import Kontinuity
 @testable import KontinuityCore
 
-// Serialized, and sharing one `ModelContainer` across all tests rather than
-// one per test: creating many independent in-memory containers in quick
-// succession has been observed to trap inside SwiftData's own internals on
-// this toolchain — a test-harness artifact (a real app session only ever
-// builds one container), not a concurrency bug in the engine itself. Each
-// test still gets a clean slate via an explicit wipe in `makeContext()`.
+/// Serialized, and sharing one `ModelContainer` across all tests rather than
+/// one per test: creating many independent in-memory containers in quick
+/// succession has been observed to trap inside SwiftData's own internals on
+/// this toolchain — a test-harness artifact (a real app session only ever
+/// builds one container), not a concurrency bug in the engine itself. Each
+/// test still gets a clean slate via an explicit wipe in `makeContext()`.
 @MainActor
 @Suite("ProgressionSyncEngine", .serialized)
 struct ProgressionSyncEngineTests {
@@ -108,6 +108,9 @@ struct ProgressionSyncEngineTests {
         await engine.flush()
 
         let rows = try context.fetch(FetchDescriptor<Book>())
+        // Not `\.isPending` here: a bare key path passed to `allSatisfy` inside
+        // `#expect`'s macro expansion fails to type-check as `rethrows`.
+        // swiftformat:disable:next preferKeyPath
         #expect(rows.allSatisfy { $0.isPending })
         #expect(service.putCalls.count == 1, "the rest of the queue will fail the same way, so it isn't worth trying")
     }
@@ -232,5 +235,13 @@ private final class MockKomgaServing: KomgaServing, @unchecked Sendable {
     func putProgression(bookID: String, write: ProgressionWrite, device _: KomgaDevice) async throws {
         putCalls.append(PutCall(bookID: bookID, page: write.page, readDate: write.readDate))
         try putResult.get()
+    }
+
+    func fileData(forBook _: String) async throws -> Data {
+        fatalError("unused")
+    }
+
+    func fileDownloadRequest(forBook _: String) -> URLRequest {
+        fatalError("unused")
     }
 }

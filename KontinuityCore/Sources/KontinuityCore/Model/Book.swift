@@ -2,14 +2,15 @@
 //  Book.swift
 //  KontinuityCore
 //
-//  Phase 4's sync-tracking record — the subset of PLAN §4's full `Book` schema
-//  that the outbox and reconciliation need. Title, page count and the rest of
-//  the metadata cache arrive with phase 5's download engine; until then this
-//  app doesn't cache books at all, it re-fetches them live.
+//  PLAN §4's full `Book` schema, arrived at in two phases. Phase 4 added the
+//  sync-tracking half (outbox + reconciliation). Phase 5 adds the metadata
+//  cache and download-state fields the download engine needs — one row per
+//  book, rather than a parallel model, for the same reason `isPending`
+//  doubles as the outbox: less to keep in sync.
 //
-//  A row exists only for a book that has been read *on this device* — that's
-//  what scopes reconciliation to books this device could plausibly have
-//  diverged from the server on, rather than every book in the library.
+//  A row now exists for a book that has been read *or downloaded* on this
+//  device — broader than phase 4's "read only" scope, since "Download unread"
+//  creates rows for books that have never been opened.
 //
 
 import Foundation
@@ -44,6 +45,48 @@ public final class Book {
     /// coalesced for free by upserting on every page turn (PLAN §5).
     public var isPending: Bool
 
+    // MARK: - Metadata cache (phase 5)
+
+    /// Cached from `KomgaBook` at download time so the "Downloaded" root and
+    /// the Downloads queue can show a title/series without the server —
+    /// PLAN §7's offline-first requirement for that sidebar entry.
+    public var seriesID: String?
+    public var seriesTitle: String?
+    public var title: String?
+    public var number: String?
+    public var numberSort: Double?
+    public var pagesCount: Int?
+    public var sizeBytes: Int64?
+
+    // MARK: - Download state (phase 5)
+
+    /// Persisted as the raw string, not `DownloadState` directly. Migrating a
+    /// custom enum attribute's default value into an existing on-disk store
+    /// (this one shipped in phase 4, before download state existed) mis-typed
+    /// it at runtime — `Could not cast value of type 'Optional<Any>' to
+    /// 'DownloadState'` on first read after migration, verified against a
+    /// real pre-phase-5 store. A plain `String`, the primitive
+    /// `downloadedBytes` below already migrates cleanly as, sidesteps it.
+    private var downloadStateRaw: String = DownloadState.notDownloaded.rawValue
+    public var downloadState: DownloadState {
+        get { DownloadState(rawValue: downloadStateRaw) ?? .notDownloaded }
+        set { downloadStateRaw = newValue.rawValue }
+    }
+
+    // Inline default, not just the initializer's — a non-optional attribute
+    // added after the store had already shipped (phase 4) needs one on the
+    // property declaration itself for SwiftData's automatic lightweight
+    // migration to backfill it; the initializer's default alone isn't
+    // visible to the migration. Without it: "missing attribute values on
+    // mandatory destination attribute" opening an existing store.
+    public var downloadedBytes: Int64 = 0
+    public var expectedBytes: Int64 = 0
+    public var downloadError: String?
+    /// Set once the download is verified against the manifest's page count —
+    /// this, not `localReadDate`, is what retention's "least-recently-read"
+    /// eviction falls back to for a downloaded-but-never-opened book.
+    public var downloadedDate: Date?
+
     public init(
         id: String,
         localPage: Int,
@@ -52,7 +95,19 @@ public final class Book {
         mediaType: String,
         serverPage: Int? = nil,
         serverReadDate: Date? = nil,
-        isPending: Bool = true
+        isPending: Bool = true,
+        seriesID: String? = nil,
+        seriesTitle: String? = nil,
+        title: String? = nil,
+        number: String? = nil,
+        numberSort: Double? = nil,
+        pagesCount: Int? = nil,
+        sizeBytes: Int64? = nil,
+        downloadState: DownloadState = .notDownloaded,
+        downloadedBytes: Int64 = 0,
+        expectedBytes: Int64 = 0,
+        downloadError: String? = nil,
+        downloadedDate: Date? = nil
     ) {
         self.id = id
         self.localPage = localPage
@@ -62,5 +117,26 @@ public final class Book {
         self.serverPage = serverPage
         self.serverReadDate = serverReadDate
         self.isPending = isPending
+        self.seriesID = seriesID
+        self.seriesTitle = seriesTitle
+        self.title = title
+        self.number = number
+        self.numberSort = numberSort
+        self.pagesCount = pagesCount
+        self.sizeBytes = sizeBytes
+        self.downloadState = downloadState
+        self.downloadedBytes = downloadedBytes
+        self.expectedBytes = expectedBytes
+        self.downloadError = downloadError
+        self.downloadedDate = downloadedDate
+    }
+
+    /// The date retention/eviction measures recency against: this device's
+    /// own read history where this book has actually been opened here,
+    /// otherwise when the download landed — so a downloaded-but-unread book
+    /// is still evictable rather than treated as infinitely recent just
+    /// because `localReadDate` defaults to the row's creation time.
+    public var lastActivityDate: Date? {
+        localPage > 0 ? localReadDate : downloadedDate
     }
 }

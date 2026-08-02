@@ -34,6 +34,7 @@ private struct ConnectedView: View {
 
     @Environment(\.secretStore) private var secrets
     @Environment(\.komgaProvider) private var provider
+    @Environment(\.downloadSessionProvider) private var downloadSessionProvider
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @State private var session: KomgaSession?
@@ -60,7 +61,12 @@ private struct ConnectedView: View {
                     failure = "The stored API key is missing."
                     return
                 }
-                session = KomgaSession(server: server, service: service, modelContext: modelContext)
+                session = KomgaSession(
+                    server: server,
+                    service: service,
+                    modelContext: modelContext,
+                    downloadSessionConfiguration: downloadSessionProvider.makeConfiguration()
+                )
             } catch {
                 failure = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
             }
@@ -70,7 +76,7 @@ private struct ConnectedView: View {
         // to be on its way to Komga before that happens, not after.
         .onChange(of: scenePhase) { _, phase in
             guard phase == .background, let session else { return }
-            Task { await session.sync.flush() }
+            Task { await session.flushAndReconcileDownloads() }
         }
     }
 
@@ -190,11 +196,7 @@ private struct BrowseSplitView: View {
         case .onDeck:
             BookShelfView(shelf: .onDeck)
         case .downloaded:
-            ContentUnavailableView(
-                "Downloaded",
-                systemImage: "arrow.down.circle",
-                description: Text("Offline reading arrives in a later version.")
-            )
+            DownloadsView()
         case .server:
             ServerSettingsView(server: session.server)
         case .none:

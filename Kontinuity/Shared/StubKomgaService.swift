@@ -144,6 +144,38 @@
             // work, neither of which depends on this landing anywhere.
         }
 
+        // MARK: - Download
+
+        /// A real ZIP, built from the same fixture page images the reader
+        /// uses — so a UI test's download actually exercises
+        /// `CBZArchive`/`LocalBookStore`, not a faked-out shortcut.
+        func fileData(forBook bookID: String) async throws -> Data {
+            try Self.zipFixture(forBook: bookID)
+        }
+
+        /// The stub has no real server to point at, so this writes the same
+        /// fixture archive to a temp file and hands back a `file://` request —
+        /// `DownloadCoordinator`'s UI-test session (plain, not background)
+        /// downloads it exactly like it would an `https://` URL.
+        func fileDownloadRequest(forBook bookID: String) -> URLRequest {
+            guard let data = try? Self.zipFixture(forBook: bookID) else {
+                return URLRequest(url: URL(fileURLWithPath: "/dev/null"))
+            }
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(bookID)-fixture.cbz")
+            try? data.write(to: url)
+            return URLRequest(url: url)
+        }
+
+        private static func zipFixture(forBook bookID: String) throws -> Data {
+            guard let book = Fixtures.books.first(where: { $0.id == bookID }) else {
+                throw KomgaError.notFound
+            }
+            let pages = (0 ..< max(book.media.pagesCount, 0)).map { index in
+                Fixtures.pageImage(at: "/opds/v2/books/\(bookID)/pages/\(index + 1)?contentNegotiation=false")
+            }
+            return StoredZipWriter.make(pages: pages)
+        }
+
         // MARK: - Paging
 
         private static func page<T: Decodable & Sendable>(_ all: [T], page: Int, size: Int) -> KomgaPage<T> {
@@ -379,6 +411,87 @@
                 context.fill(CGRect(origin: .zero, size: size))
             }
             return image.jpegData(compressionQuality: 0.8) ?? Data()
+        }
+    }
+
+    /// The smallest possible ZIP writer — stored (uncompressed) entries only,
+    /// zero-padded page numbers so natural sort matches insertion order.
+    /// `CBZArchive` is a reader; this is its mirror image, kept here rather
+    /// than in Core because nothing at runtime ever needs to *write* a CBZ.
+    private enum StoredZipWriter {
+        static func make(pages: [Data]) -> Data {
+            var body = Data()
+            var central = Data()
+            var offsets: [Int] = []
+
+            let names = pages.indices.map { String(format: "%04d.jpg", $0 + 1) }
+            for (page, name) in zip(pages, names) {
+                offsets.append(body.count)
+                let nameBytes = Data(name.utf8)
+                body.appendUInt32(0x0403_4B50)
+                body.appendUInt16(20)
+                body.appendUInt16(0)
+                body.appendUInt16(0) // method: stored
+                body.appendUInt16(0)
+                body.appendUInt16(0)
+                body.appendUInt32(0) // crc32 — unchecked by CBZArchive
+                body.appendUInt32(UInt32(page.count))
+                body.appendUInt32(UInt32(page.count))
+                body.appendUInt16(UInt16(nameBytes.count))
+                body.appendUInt16(0)
+                body.append(nameBytes)
+                body.append(page)
+            }
+
+            for (index, name) in names.enumerated() {
+                let nameBytes = Data(name.utf8)
+                let size = UInt32(pages[index].count)
+                central.appendUInt32(0x0201_4B50)
+                central.appendUInt16(20)
+                central.appendUInt16(20)
+                central.appendUInt16(0)
+                central.appendUInt16(0)
+                central.appendUInt16(0)
+                central.appendUInt16(0)
+                central.appendUInt32(0)
+                central.appendUInt32(size)
+                central.appendUInt32(size)
+                central.appendUInt16(UInt16(nameBytes.count))
+                central.appendUInt16(0)
+                central.appendUInt16(0)
+                central.appendUInt16(0)
+                central.appendUInt16(0)
+                central.appendUInt32(0)
+                central.appendUInt32(UInt32(offsets[index]))
+                central.append(nameBytes)
+            }
+
+            var archive = body
+            let centralDirOffset = archive.count
+            archive.append(central)
+            archive.appendUInt32(0x0605_4B50)
+            archive.appendUInt16(0)
+            archive.appendUInt16(0)
+            archive.appendUInt16(UInt16(pages.count))
+            archive.appendUInt16(UInt16(pages.count))
+            archive.appendUInt32(UInt32(central.count))
+            archive.appendUInt32(UInt32(centralDirOffset))
+            archive.appendUInt16(0)
+            return archive
+        }
+    }
+
+    private extension Data {
+        mutating func appendUInt16(_ value: UInt16) {
+            append(UInt8(value & 0xFF))
+            append(UInt8((value >> 8) & 0xFF))
+        }
+
+        mutating func appendUInt32(_ value: UInt32) {
+            append(UInt8(value & 0xFF))
+            append(UInt8((value >> 8) & 0xFF))
+            append(UInt8((value >> 16) & 0xFF))
+            append(UInt8((value >> 24) & 0xFF))
         }
     }
 

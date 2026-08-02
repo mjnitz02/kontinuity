@@ -8,6 +8,7 @@
 //
 
 import KontinuityCore
+import SwiftData
 import SwiftUI
 
 struct BookDetailView: View {
@@ -18,6 +19,11 @@ struct BookDetailView: View {
     /// the list happened to be holding.
     @State private var refreshed: KomgaBook?
     @State private var showingReader = false
+    @Query private var bookRows: [Book]
+
+    private var downloadRow: Book? {
+        bookRows.first { $0.id == current.id }
+    }
 
     private var current: KomgaBook {
         refreshed ?? book
@@ -51,7 +57,7 @@ struct BookDetailView: View {
         .refreshable { await reload() }
         .task(id: book.id) { await reload() }
         .fullScreenCover(isPresented: $showingReader) {
-            ReaderView(book: current, service: session.service, sync: session.sync)
+            ReaderView(book: current, service: session.service, sync: session.sync, downloads: session.downloads)
         }
     }
 
@@ -100,7 +106,10 @@ struct BookDetailView: View {
             }
             .font(.caption)
 
-            readButton
+            HStack(spacing: 12) {
+                readButton
+                downloadControl
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -126,6 +135,48 @@ struct BookDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private var downloadControl: some View {
+        switch downloadRow?.downloadState ?? .notDownloaded {
+        case .notDownloaded, .failed:
+            VStack(alignment: .leading, spacing: 4) {
+                Button {
+                    session.downloads.enqueue(book: current)
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.bordered)
+                .disabled(!current.isReadable)
+                .accessibilityIdentifier(AID.bookDetailDownload)
+
+                if let error = downloadRow?.downloadError, downloadRow?.downloadState == .failed {
+                    Text(error).font(.caption).foregroundStyle(.orange)
+                }
+            }
+
+        case .queued, .downloading, .decompressing:
+            HStack(spacing: 8) {
+                ProgressView(value: downloadProgressFraction).frame(width: 60)
+                Button("Cancel") { session.downloads.cancel(bookID: current.id) }
+            }
+            .accessibilityIdentifier(AID.bookDetailDownload)
+
+        case .downloaded:
+            Button(role: .destructive) {
+                session.downloads.remove(bookID: current.id)
+            } label: {
+                Label("Remove download", systemImage: "trash")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier(AID.bookDetailDownload)
+        }
+    }
+
+    private var downloadProgressFraction: Double {
+        guard let row = downloadRow, row.expectedBytes > 0 else { return 0 }
+        return min(1, max(0, Double(row.downloadedBytes) / Double(row.expectedBytes)))
+    }
+
     private func detailRow(_ label: String, _ value: String) -> some View {
         GridRow {
             Text(label).foregroundStyle(.secondary)
@@ -136,7 +187,7 @@ struct BookDetailView: View {
     private func reload() async {
         // Manual refresh trigger #5 (PLAN §5): push anything pending first, so
         // the fetch that follows reflects this device's own latest write too.
-        await session.sync.flush()
+        await session.flushAndReconcileDownloads()
         guard let fetched = try? await session.service.book(id: book.id) else { return }
         refreshed = fetched
         session.sync.reconcile(with: fetched)

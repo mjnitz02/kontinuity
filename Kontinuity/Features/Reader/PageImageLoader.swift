@@ -37,7 +37,7 @@ final class PageImageLoader {
         cache.countLimit = 12
     }
 
-    func image(forPage index: Int, link: KomgaPageLink) async -> UIImage? {
+    func image(forPage index: Int, source: PageSource) async -> UIImage? {
         let key = NSNumber(value: index)
         if let cached = cache.object(forKey: key) {
             return cached
@@ -47,7 +47,12 @@ final class PageImageLoader {
         }
 
         let task = Task { [service, maxPixelSize] () -> UIImage? in
-            return await Self.fetch(link: link, service: service, maxPixelSize: maxPixelSize)
+            switch source {
+            case let .remote(link):
+                await Self.fetch(link: link, service: service, maxPixelSize: maxPixelSize)
+            case let .local(url, _):
+                await Self.fetchLocal(url: url, maxPixelSize: maxPixelSize)
+            }
         }
         inFlight[index] = task
 
@@ -82,6 +87,14 @@ final class PageImageLoader {
             }
         }
         return nil
+    }
+
+    /// Off the main thread, same as the network path — decoding and
+    /// downsampling a full-resolution manga page is not free just because
+    /// the bytes are already local.
+    private static func fetchLocal(url: URL, maxPixelSize: CGFloat) async -> UIImage? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return downsample(data, to: maxPixelSize)
     }
 
     private static func downsample(_ data: Data, to maxPixelSize: CGFloat) -> UIImage? {

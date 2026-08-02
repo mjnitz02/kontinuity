@@ -68,7 +68,7 @@ struct BookShelfView: View {
         .overlay { status }
         .navigationTitle(shelf.title)
         .refreshable {
-            await session.sync.flush()
+            await session.flushAndReconcileDownloads()
             await feed.refresh()
         }
         .task(id: Query(shelf: shelf, libraryID: libraryID)) {
