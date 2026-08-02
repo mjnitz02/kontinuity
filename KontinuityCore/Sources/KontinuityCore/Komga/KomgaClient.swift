@@ -144,6 +144,50 @@ public struct KomgaClient: KomgaServing {
         }
     }
 
+    // MARK: - KomgaServing: reader
+
+    public func divinaManifest(forBook bookID: String) async throws -> KomgaDivinaManifest {
+        // A single-publication manifest is `application/opds-publication+json`,
+        // not the `application/opds+json` feeds use — Komga 406s the default
+        // `Accept: application/json` `get()` otherwise sends. Found by hitting
+        // a live server; no fixture would have caught it.
+        try await get(
+            "/opds/v2/books/\(bookID)/manifest/divina",
+            accept: "application/opds-publication+json"
+        )
+    }
+
+    public func pageImageData(at href: String) async throws -> Data {
+        guard let url = URL(string: href, relativeTo: address.baseURL) else {
+            throw KomgaError.decoding(description: "Malformed page link: \(href)")
+        }
+        var request = URLRequest(url: url.absoluteURL)
+        request.httpMethod = "GET"
+        request.setValue(AppInfo.userAgent, forHTTPHeaderField: "User-Agent")
+        guard let data = try await send(request) else {
+            throw KomgaError.decoding(description: "Komga returned no image data for \(href).")
+        }
+        return data
+    }
+
+    public func putProgression(
+        bookID: String,
+        page: Int,
+        pageHref: String,
+        mediaType: String,
+        device: KomgaDevice
+    ) async throws {
+        let body = KomgaProgressionRequest(
+            modified: KomgaDate.format(.now),
+            device: .init(id: device.id.uuidString, name: device.name),
+            locator: .init(href: pageHref, type: mediaType, locations: .init(position: page))
+        )
+        var request = makeRequest(path: "/api/v1/books/\(bookID)/progression", method: "PUT")
+        request.httpBody = try JSONEncoder().encode(body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        _ = try await send(request)
+    }
+
     // MARK: - Request plumbing
 
     private func makeRequest(path: String, method: String, query: [URLQueryItem] = []) -> URLRequest {
@@ -154,8 +198,16 @@ public struct KomgaClient: KomgaServing {
         return request
     }
 
-    private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
-        guard let data = try await send(makeRequest(path: path, method: "GET", query: query)) else {
+    private func get<T: Decodable>(
+        _ path: String,
+        query: [URLQueryItem] = [],
+        accept: String? = nil
+    ) async throws -> T {
+        var request = makeRequest(path: path, method: "GET", query: query)
+        if let accept {
+            request.setValue(accept, forHTTPHeaderField: "Accept")
+        }
+        guard let data = try await send(request) else {
             throw KomgaError.decoding(description: "Expected a response body from \(path).")
         }
         return try decode(T.self, from: data)
@@ -255,6 +307,32 @@ public struct KomgaClient: KomgaServing {
         }
         return decoder
     }()
+}
+
+/// The progression PUT body (KOMGA-API §4). File-private: only `KomgaClient`
+/// constructs one, so there's no reason to make the wire shape part of the
+/// public surface `KomgaServing` callers see. Flat rather than nested two deep
+/// (`Locator.Locations`) — `PositionLocator` sits alongside its siblings
+/// instead.
+struct KomgaProgressionRequest: Encodable {
+    let modified: String
+    let device: ProgressionDevice
+    let locator: ProgressionLocator
+}
+
+struct ProgressionDevice: Encodable {
+    let id: String
+    let name: String
+}
+
+struct ProgressionLocator: Encodable {
+    let href: String
+    let type: String
+    let locations: PositionLocation
+}
+
+struct PositionLocation: Encodable {
+    let position: Int
 }
 
 /// Komga serialises `ZonedDateTime` with an offset and `LocalDateTime` without

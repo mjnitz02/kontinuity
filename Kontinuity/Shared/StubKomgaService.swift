@@ -111,6 +111,45 @@
             Fixtures.poster(for: target)
         }
 
+        // MARK: - Reader
+
+        func divinaManifest(forBook bookID: String) async throws -> KomgaDivinaManifest {
+            guard let book = Fixtures.books.first(where: { $0.id == bookID }) else {
+                throw KomgaError.notFound
+            }
+            let count = max(book.media.pagesCount, 0)
+            // Portrait, aspect ≈ 0.66 — matches KOMGA-API §2's measurement
+            // against a real CBZ, so the layout engine sees realistic input.
+            let readingOrder = (0 ..< count).map { index in
+                KomgaPageLink(
+                    href: "/opds/v2/books/\(bookID)/pages/\(index + 1)?contentNegotiation=false",
+                    type: "image/jpeg",
+                    width: 800,
+                    height: 1200
+                )
+            }
+            return KomgaDivinaManifest(
+                metadata: .init(title: book.displayTitle, numberOfPages: count),
+                readingOrder: readingOrder
+            )
+        }
+
+        func pageImageData(at href: String) async throws -> Data {
+            Fixtures.pageImage(at: href)
+        }
+
+        func putProgression(
+            bookID _: String,
+            page _: Int,
+            pageHref _: String,
+            mediaType _: String,
+            device _: KomgaDevice
+        ) async throws {
+            // Verifying the real write path is LiveKomgaTests's job, not the
+            // stub's — the UI tests only need paging and the resume position to
+            // work, neither of which depends on this landing anywhere.
+        }
+
         // MARK: - Paging
 
         private static func page<T: Decodable & Sendable>(_ all: [T], page: Int, size: Int) -> KomgaPage<T> {
@@ -153,39 +192,39 @@
             KomgaSeries(
                 id: UITestFixture.inProgressSeriesID,
                 libraryId: UITestFixture.mangaLibraryID,
-                name: "air-gear",
+                name: "windrunner",
                 booksCount: 4,
                 booksReadCount: 1,
                 booksUnreadCount: 2,
                 booksInProgressCount: 1,
                 metadata: KomgaSeriesMetadata(
-                    title: "Air Gear",
-                    titleSort: "Air Gear",
-                    summary: "Ikki discovers Air Trecks and the world of Storm Riders.",
+                    title: "Windrunner",
+                    titleSort: "Windrunner",
+                    summary: "Mika discovers a pair of storm-powered skates and a rooftop city of racers.",
                     status: "ONGOING",
-                    publisher: "Kodansha",
+                    publisher: "Kessho House",
                     language: "en",
                     ageRating: 13,
                     genres: ["action", "shounen"],
                     totalBookCount: 37
                 ),
                 booksMetadata: KomgaBooksMetadata(
-                    authors: [KomgaAuthor(name: "Oh!great", role: "writer")],
-                    summary: "Air Gear, volume by volume."
+                    authors: [KomgaAuthor(name: "R. Kessho", role: "writer")],
+                    summary: "Windrunner, volume by volume."
                 )
             ),
             KomgaSeries(
                 id: UITestFixture.finishedSeriesID,
                 libraryId: UITestFixture.mangaLibraryID,
-                name: "akira",
+                name: "neon-requiem",
                 booksCount: 2,
                 booksReadCount: 2,
                 metadata: KomgaSeriesMetadata(
-                    title: "Akira",
-                    titleSort: "Akira",
-                    summary: "Neo-Tokyo is about to explode.",
+                    title: "Neon Requiem",
+                    titleSort: "Neon Requiem",
+                    summary: "A city of chrome towers is about to explode.",
                     status: "ENDED",
-                    publisher: "Kodansha",
+                    publisher: "Kessho House",
                     genres: ["cyberpunk"],
                     readingDirection: KomgaReadingDirection.rightToLeft.rawValue
                 )
@@ -193,15 +232,15 @@
             KomgaSeries(
                 id: UITestFixture.comicsSeriesID,
                 libraryId: UITestFixture.comicsLibraryID,
-                name: "saga",
+                name: "halcyon-drift",
                 booksCount: 1,
                 booksUnreadCount: 1,
                 metadata: KomgaSeriesMetadata(
-                    title: "Saga",
-                    titleSort: "Saga",
-                    summary: "Two soldiers from opposite sides of a galactic war.",
+                    title: "Halcyon Drift",
+                    titleSort: "Halcyon Drift",
+                    summary: "Two deserters from opposite sides of a galactic war.",
                     status: "ONGOING",
-                    publisher: "Image"
+                    publisher: "Driftwood Press"
                 )
             )
         ]
@@ -210,7 +249,7 @@
             book(
                 id: UITestFixture.readBookID,
                 number: 1,
-                title: "Air Gear, Vol. 1",
+                title: "Windrunner, Vol. 1",
                 progress: KomgaReadProgress(
                     page: 190,
                     completed: true,
@@ -221,7 +260,7 @@
             book(
                 id: UITestFixture.inProgressBookID,
                 number: 2,
-                title: "Air Gear, Vol. 2",
+                title: "Windrunner, Vol. 2",
                 progress: KomgaReadProgress(
                     page: 42,
                     completed: false,
@@ -229,22 +268,23 @@
                     deviceName: "Matt's iPad"
                 )
             ),
-            book(id: UITestFixture.unreadBookID, number: 3, title: "Air Gear, Vol. 3"),
+            // Readable, with fixture pages behind it — what the reader UI tests open.
+            book(id: UITestFixture.unreadBookID, number: 3, title: "Windrunner, Vol. 3", pages: 6),
             // Zero pages and status UNKNOWN: Komga has the file but hasn't analysed
             // it. The UI must say so rather than offering an empty reader.
             book(
                 id: UITestFixture.unanalysedBookID,
                 number: 4,
-                title: "Air Gear, Vol. 4",
+                title: "Windrunner, Vol. 4",
                 pages: 0,
                 mediaStatus: "UNKNOWN"
             ),
             book(
-                id: "book-akira-1",
+                id: "book-neon-requiem-1",
                 number: 1,
-                title: "Akira, Vol. 1",
+                title: "Neon Requiem, Vol. 1",
                 seriesID: UITestFixture.finishedSeriesID,
-                seriesTitle: "Akira",
+                seriesTitle: "Neon Requiem",
                 progress: KomgaReadProgress(
                     page: 364,
                     completed: true,
@@ -253,11 +293,11 @@
                 )
             ),
             book(
-                id: "book-akira-2",
+                id: "book-neon-requiem-2",
                 number: 2,
-                title: "Akira, Vol. 2",
+                title: "Neon Requiem, Vol. 2",
                 seriesID: UITestFixture.finishedSeriesID,
-                seriesTitle: "Akira",
+                seriesTitle: "Neon Requiem",
                 progress: KomgaReadProgress(
                     page: 296,
                     completed: true,
@@ -266,11 +306,11 @@
                 )
             ),
             book(
-                id: "book-saga-1",
+                id: "book-halcyon-drift-1",
                 number: 1,
-                title: "Saga, Vol. 1",
+                title: "Halcyon Drift, Vol. 1",
                 seriesID: UITestFixture.comicsSeriesID,
-                seriesTitle: "Saga",
+                seriesTitle: "Halcyon Drift",
                 libraryID: UITestFixture.comicsLibraryID
             )
         ]
@@ -280,7 +320,7 @@
             number: Int,
             title: String,
             seriesID: String = UITestFixture.inProgressSeriesID,
-            seriesTitle: String = "Air Gear",
+            seriesTitle: String = "Windrunner",
             libraryID: String = UITestFixture.mangaLibraryID,
             pages: Int = 190,
             mediaStatus: String = "READY",
@@ -301,7 +341,7 @@
                     numberSort: Double(number),
                     summary: "Volume \(number).",
                     releaseDate: KomgaDay(year: 2018, month: 1, day: number),
-                    authors: [KomgaAuthor(name: "Oh!great", role: "writer")]
+                    authors: [KomgaAuthor(name: "R. Kessho", role: "writer")]
                 ),
                 readProgress: progress
             )
@@ -328,6 +368,23 @@
                 context.fill(CGRect(origin: .zero, size: size))
             }
             return image.jpegData(compressionQuality: 0.8)
+        }
+
+        /// A flat-colour JPEG for a reader page, keyed by its href so the same
+        /// page looks the same across a run without any binary fixtures in the
+        /// repo — same technique as ``poster(for:)``, sized to what the stub's
+        /// manifest declares (800×1200, matching KOMGA-API §2's measured aspect).
+        static func pageImage(at href: String) -> Data {
+            let digest = href.unicodeScalars.reduce(UInt32(2_166_136_261)) { hash, scalar in
+                (hash ^ (scalar.value & 0xFF)) &* 16_777_619
+            }
+            let hue = Double(digest % 360) / 360.0
+            let size = CGSize(width: 800, height: 1200)
+            let image = UIGraphicsImageRenderer(size: size).image { context in
+                UIColor(hue: hue, saturation: 0.55, brightness: 0.5, alpha: 1).setFill()
+                context.fill(CGRect(origin: .zero, size: size))
+            }
+            return image.jpegData(compressionQuality: 0.8) ?? Data()
         }
     }
 

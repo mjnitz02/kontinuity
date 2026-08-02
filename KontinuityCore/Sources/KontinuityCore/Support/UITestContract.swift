@@ -35,24 +35,27 @@ public enum UITestMode: String, Sendable {
 
 /// Identifiers of the canned library the app serves itself in
 /// ``UITestMode/connected``. The fixture data itself lives in the app target;
-/// only the ids are shared, so a test can say "open Air Gear" without depending
+/// only the ids are shared, so a test can say "open Windrunner" without depending
 /// on display text that's free to change.
+///
+/// Fixture titles are always fictitious — never a real series from Matt's Komga
+/// library — so nothing copyrighted ends up committed to the repo.
 public enum UITestFixture {
     public static let mangaLibraryID = "lib-manga"
     public static let comicsLibraryID = "lib-comics"
 
     /// Partly read: has unread books, one in progress. The general case.
-    public static let inProgressSeriesID = "series-air-gear"
+    public static let inProgressSeriesID = "series-windrunner"
     /// Every book read — exercises the "no badge" path.
-    public static let finishedSeriesID = "series-akira"
+    public static let finishedSeriesID = "series-neon-requiem"
     /// In the second library, so the library filter has something to prove.
-    public static let comicsSeriesID = "series-saga"
+    public static let comicsSeriesID = "series-halcyon-drift"
 
-    public static let unreadBookID = "book-air-gear-3"
-    public static let inProgressBookID = "book-air-gear-2"
-    public static let readBookID = "book-air-gear-1"
+    public static let unreadBookID = "book-windrunner-3"
+    public static let inProgressBookID = "book-windrunner-2"
+    public static let readBookID = "book-windrunner-1"
     /// Komga hasn't analysed it: zero pages, not readable.
-    public static let unanalysedBookID = "book-air-gear-4"
+    public static let unanalysedBookID = "book-windrunner-4"
 }
 
 /// Accessibility identifiers for the elements UI tests drive.
@@ -110,4 +113,13 @@ public enum AID {
     public static let bookDetailTitle = "bookDetail.title"
     public static let bookDetailState = "bookDetail.state"
     public static let bookDetailRead = "bookDetail.read"
+
+    // Reader
+    /// The zoomable page surface itself — a UI test taps normalized coordinates
+    /// on it for the left/right turn zones rather than needing separate
+    /// identifiers per zone.
+    public static let readerPage = "reader.page"
+    public static let readerDone = "reader.done"
+    public static let readerPageLabel = "reader.pageLabel"
+    public static let readerScrubber = "reader.scrubber"
 }

@@ -218,6 +218,54 @@ struct LiveKomgaTests {
         #expect(bytes.prefix(2) == Data([0xFF, 0xD8]))
     }
 
+    // MARK: - Reader
+
+    /// Every reader assertion needs a readable book to open. Scans series
+    /// until one turns up rather than assuming the first series has one —
+    /// never a hardcoded real title, since the container's contents depend on
+    /// whatever was scanned into it.
+    private func anyReadableBook() async throws -> KomgaBook? {
+        let key = try #require(LiveKomga.apiKey)
+        let client = try client(.apiKey(key))
+        let seriesPage = try await client.series(matching: SeriesQuery(size: 20))
+        for series in seriesPage.content {
+            let books = try await client.books(inSeries: series.id, matching: BookQuery(size: 20))
+            if let readable = books.content.first(where: \.isReadable) {
+                return readable
+            }
+        }
+        return nil
+    }
+
+    @Test("reads a real DIVINA manifest, fetches a page, and writes progression")
+    func readerRoundTrip() async throws {
+        guard let book = try await anyReadableBook() else { return }
+        let key = try #require(LiveKomga.apiKey)
+        let live = try client(.apiKey(key))
+
+        let manifest = try await live.divinaManifest(forBook: book.id)
+        #expect(!manifest.readingOrder.isEmpty)
+        let firstPage = try #require(manifest.readingOrder.first)
+        // Width/height come from Komga's own analysis — this is the whole
+        // premise the layout engine is built on (KOMGA-API §2).
+        #expect((firstPage.width ?? 0) > 0)
+        #expect((firstPage.height ?? 0) > 0)
+
+        let pageData = try await live.pageImageData(at: firstPage.href)
+        #expect(pageData.count > 1000)
+        #expect(pageData.prefix(2) == Data([0xFF, 0xD8]))
+
+        try await live.putProgression(
+            bookID: book.id,
+            page: 1,
+            pageHref: firstPage.href,
+            mediaType: firstPage.type,
+            device: KomgaDevice(id: UUID(), name: "Kontinuity integration test")
+        )
+        let refetched = try await live.book(id: book.id)
+        #expect(refetched.readProgress?.page == 1)
+    }
+
     @Test("the on-deck and keep-reading feeds decode")
     func liveFeeds() async throws {
         let key = try #require(LiveKomga.apiKey)

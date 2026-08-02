@@ -57,6 +57,42 @@ public protocol KomgaServing: Sendable {
     /// thumbnail yet (404), which is a normal state during a library scan
     /// rather than something worth showing an error for.
     func thumbnailData(for target: KomgaThumbnail) async throws -> Data?
+
+    // MARK: - Reader (phase 3)
+
+    /// `GET /opds/v2/books/{id}/manifest/divina` — the reader's page list, with
+    /// width/height known before any image is fetched (KOMGA-API §2).
+    func divinaManifest(forBook bookID: String) async throws -> KomgaDivinaManifest
+
+    /// Fetches the bytes at a manifest-provided link — a page or its alternate.
+    /// Takes the raw href Komga gave us rather than reconstructing a path, since
+    /// the href already carries its own query string.
+    func pageImageData(at href: String) async throws -> Data
+
+    /// `PUT .../progression` — a direct, best-effort write made after each page
+    /// turn. Phase 4 wraps this in an offline outbox with conflict reconciliation;
+    /// today a failure (including the 409 clock guard) is simply swallowed by the
+    /// caller rather than surfaced, since there's nowhere useful to show it yet.
+    func putProgression(
+        bookID: String,
+        page: Int,
+        pageHref: String,
+        mediaType: String,
+        device: KomgaDevice
+    ) async throws
+}
+
+/// The `device.id`/`device.name` pair every progression write carries
+/// (KOMGA-API §4), bundled so `putProgression` stays under the line-count limit
+/// rather than taking both as loose parameters.
+public struct KomgaDevice: Sendable, Hashable {
+    public let id: UUID
+    public let name: String
+
+    public init(id: UUID, name: String) {
+        self.id = id
+        self.name = name
+    }
 }
 
 // MARK: - Queries

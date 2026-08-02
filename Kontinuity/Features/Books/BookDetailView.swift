@@ -17,6 +17,7 @@ struct BookDetailView: View {
     /// Re-fetched so read progress reflects another device rather than whatever
     /// the list happened to be holding.
     @State private var refreshed: KomgaBook?
+    @State private var showingReader = false
 
     private var current: KomgaBook {
         refreshed ?? book
@@ -49,6 +50,14 @@ struct BookDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await reload() }
         .task(id: book.id) { await reload() }
+        .fullScreenCover(isPresented: $showingReader) {
+            ReaderView(
+                book: current,
+                service: session.service,
+                deviceID: session.server.deviceID,
+                deviceName: session.server.deviceName
+            )
+        }
     }
 
     private var details: some View {
@@ -104,12 +113,12 @@ struct BookDetailView: View {
     private var readButton: some View {
         VStack(alignment: .leading, spacing: 4) {
             Button {
-                // Phase 3.
+                showingReader = true
             } label: {
                 Label(current.readState == .unread ? "Read" : "Continue", systemImage: "book")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(true)
+            .disabled(!current.isReadable)
             .accessibilityIdentifier(AID.bookDetailRead)
 
             if !current.isReadable {

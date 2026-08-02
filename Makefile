@@ -14,7 +14,7 @@ UI_TARGET      := KontinuityUITests
 
 # Simulator destination. The iPad is the primary target — iPhone support comes
 # later (see .claude/PLAN.md phase 7), so the default sim is an iPad.
-SIMULATOR_NAME ?= iPad Pro 13-inch (M5)
+SIMULATOR_NAME ?= iPad Pro 11-inch (M5)
 # arch=arm64 pins the native slice so xcodebuild doesn't warn about matching
 # both the arm64 and x86_64/Rosetta slice of the same simulator.
 DESTINATION    ?= platform=iOS Simulator,name=$(SIMULATOR_NAME),arch=arm64

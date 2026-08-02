@@ -32,18 +32,18 @@ final class BrowseUITests: XCTestCase {
     func testSeriesGridShowsTheLibrary() {
         app.find(AID.seriesGrid).assertAppears("The series grid")
 
-        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Air Gear's cell")
-        app.find(AID.seriesCell(UITestFixture.finishedSeriesID)).assertAppears("Akira's cell")
+        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Windrunner's cell")
+        app.find(AID.seriesCell(UITestFixture.finishedSeriesID)).assertAppears("Neon Requiem's cell")
         // Series from the second library appear under "All Series" too.
-        app.find(AID.seriesCell(UITestFixture.comicsSeriesID)).assertAppears("Saga's cell")
+        app.find(AID.seriesCell(UITestFixture.comicsSeriesID)).assertAppears("Halcyon Drift's cell")
     }
 
     @MainActor
     func testUnreadCountIsShownOnlyWhereThereAreUnreadBooks() {
         let inProgress = app.find(AID.seriesCell(UITestFixture.inProgressSeriesID))
-            .assertAppears("Air Gear's cell")
+            .assertAppears("Windrunner's cell")
         let finished = app.find(AID.seriesCell(UITestFixture.finishedSeriesID))
-            .assertAppears("Akira's cell")
+            .assertAppears("Neon Requiem's cell")
 
         // A cell is one combined accessibility element, so its label is what a
         // VoiceOver user hears — asserting on it checks the badge and the
@@ -66,20 +66,20 @@ final class BrowseUITests: XCTestCase {
 
     @MainActor
     func testSearchFiltersTheGrid() {
-        app.find(AID.seriesCell(UITestFixture.finishedSeriesID)).assertAppears("Akira's cell")
+        app.find(AID.seriesCell(UITestFixture.finishedSeriesID)).assertAppears("Neon Requiem's cell")
 
         let field = app.searchFields.firstMatch.assertAppears("The search field")
         field.tap()
-        field.typeText("Akira")
+        field.typeText("Neon Requiem")
 
         // Search is debounced, so the assertion has to be one that waits.
         XCTAssertTrue(
             app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).waitForNonExistence(timeout: 5),
-            "Searching for Akira should filter Air Gear out."
+            "Searching for Neon Requiem should filter Windrunner out."
         )
         XCTAssertTrue(
             app.find(AID.seriesCell(UITestFixture.finishedSeriesID)).exists,
-            "Searching for Akira should keep Akira."
+            "Searching for Neon Requiem should keep Neon Requiem."
         )
     }
 
@@ -101,7 +101,7 @@ final class BrowseUITests: XCTestCase {
             .assertAppears("The Comics library row")
         comics.tap()
 
-        app.find(AID.seriesCell(UITestFixture.comicsSeriesID)).assertAppears("Saga's cell")
+        app.find(AID.seriesCell(UITestFixture.comicsSeriesID)).assertAppears("Halcyon Drift's cell")
         XCTAssertTrue(
             app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).waitForNonExistence(timeout: 5),
             "A manga series should not show under the Comics library."
@@ -127,7 +127,7 @@ final class BrowseUITests: XCTestCase {
     func testOnDeckShowsTheNextUnreadBookOfAStartedSeries() {
         app.find(AID.sidebarOnDeck).assertAppears("On Deck").tap()
 
-        // Air Gear has a book in progress, so Komga's rule excludes it; Akira is
+        // Windrunner has a book in progress, so Komga's rule excludes it; Neon Requiem is
         // fully read so it has no next book. The shelf is legitimately empty,
         // and saying so beats an endless spinner.
         app.find(AID.browseEmpty).assertAppears("The empty On Deck state")
@@ -135,7 +135,7 @@ final class BrowseUITests: XCTestCase {
 
     @MainActor
     func testSwitchingSidebarRootsClearsAPushedScreen() {
-        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Air Gear's cell").tap()
+        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Windrunner's cell").tap()
         app.find(AID.seriesDetailTitle).assertAppears("The series detail screen")
 
         app.find(AID.sidebarKeepReading).tap()
@@ -150,7 +150,7 @@ final class BrowseUITests: XCTestCase {
 
     @MainActor
     func testSeriesDetailListsBooksWithTheirReadState() {
-        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Air Gear's cell").tap()
+        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Windrunner's cell").tap()
 
         app.find(AID.seriesDetailTitle).assertAppears("The series title")
         app.find(AID.seriesBookList).assertAppears("The book list")
@@ -174,18 +174,17 @@ final class BrowseUITests: XCTestCase {
 
     @MainActor
     func testBookDetailOpensFromASeries() {
-        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Air Gear's cell").tap()
+        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Windrunner's cell").tap()
         app.find(AID.bookRow(UITestFixture.unreadBookID)).assertAppears("The unread book row").tap()
 
         app.find(AID.bookDetailTitle).assertAppears("The book detail screen")
-        // Reading arrives in phase 3; until then the control is present but off,
-        // which is the honest state rather than a button that does nothing.
-        XCTAssertFalse(app.find(AID.bookDetailRead).isEnabled)
+        // Phase 3: a readable book's Read button is live.
+        XCTAssertTrue(app.find(AID.bookDetailRead).isEnabled)
     }
 
     @MainActor
     func testAnUnanalysedBookIsNotOfferedAsReadable() {
-        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Air Gear's cell").tap()
+        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Windrunner's cell").tap()
         app.find(AID.bookRow(UITestFixture.unanalysedBookID)).assertAppears("The unanalysed book row").tap()
 
         app.find(AID.bookDetailTitle).assertAppears("The book detail screen")
