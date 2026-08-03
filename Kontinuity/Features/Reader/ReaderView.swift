@@ -28,6 +28,7 @@ struct ReaderView: View {
     @State private var loader: PageImageLoader
     @State private var chromeVisible = true
     @State private var containerSize: CGSize = .zero
+    @State private var nextChapterPrompt: NextChapterPrompt?
 
     init(
         book: KomgaBook,
@@ -144,11 +145,65 @@ struct ReaderView: View {
                 loader.prune(around: currentLeadingPageIndex)
                 if model.isAtLastSpread {
                     Task { await model.loadNextBookIfNeeded() }
+                } else {
+                    nextChapterPrompt = nil
                 }
             }
+            // Detects an overswipe attempt on the last page — the `TabView`
+            // itself just bounces (no selection change, nothing to hook), so
+            // this runs alongside it rather than replacing it. Simultaneous,
+            // not exclusive, so normal mid-book paging swipes are untouched;
+            // gated to a mostly-horizontal, leftward (forward, LTR-pinned —
+            // see `ReaderModel.recomputeSpreads`) drag so panning a zoomed-in
+            // page doesn't false-trigger it.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 24)
+                    .onEnded { value in
+                        guard model.isAtLastSpread else { return }
+                        guard value.translation.width < -40,
+                              abs(value.translation.width) > abs(value.translation.height) * 2
+                        else { return }
+                        handleEndOfBookAdvance()
+                    }
+            )
 
             if chromeVisible {
                 chrome
+            }
+
+            if let prompt = nextChapterPrompt {
+                VStack {
+                    Spacer()
+                    NextChapterToastView(hasNextBook: prompt.hasNextBook)
+                        .padding(.bottom, 40)
+                }
+                .allowsHitTesting(false)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.default, value: nextChapterPrompt)
+    }
+
+    /// Komga's "swipe/tap past the last page" affordance (READER-DESIGN §2):
+    /// the first forward action once there are no more pages arms a toast
+    /// instead of doing nothing; a second forward action within the window
+    /// actually advances. Reuses the same next-book plumbing as the "Start
+    /// Volume N" chrome button — this is just a faster way to trigger it.
+    private func handleEndOfBookAdvance() {
+        if nextChapterPrompt != nil {
+            nextChapterPrompt = nil
+            if let next = model.nextBook {
+                openNextBook(next)
+            }
+            return
+        }
+
+        let prompt = NextChapterPrompt(hasNextBook: model.nextBook != nil)
+        nextChapterPrompt = prompt
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            if nextChapterPrompt?.id == prompt.id {
+                nextChapterPrompt = nil
             }
         }
     }
@@ -201,7 +256,12 @@ struct ReaderView: View {
     private func handleTapZone(_ zone: ZoomableImageView.TapZone) {
         switch zone {
         case .previous: model.retreat()
-        case .next: model.advance()
+        case .next:
+            if model.isAtLastSpread {
+                handleEndOfBookAdvance()
+            } else {
+                model.advance()
+            }
         case .toggleChrome: withAnimation { chromeVisible.toggle() }
         }
     }
@@ -209,6 +269,7 @@ struct ReaderView: View {
     /// Replaces the model in place so "Start Volume N" stays inside this
     /// full-screen cover rather than dismissing and re-presenting.
     private func openNextBook(_ next: KomgaBook) {
+        nextChapterPrompt = nil
         model.flushProgress()
         if downloads.openBookID == book.id {
             downloads.openBookID = next.id
@@ -301,5 +362,27 @@ struct ReaderView: View {
             Button("Done") { dismiss() }
         }
         .foregroundStyle(.white)
+    }
+}
+
+/// Armed by the first forward action on a book's last page; a second one
+/// within the window consumes it (see `ReaderView.handleEndOfBookAdvance`).
+private struct NextChapterPrompt: Identifiable, Equatable {
+    let id = UUID()
+    let hasNextBook: Bool
+}
+
+private struct NextChapterToastView: View {
+    let hasNextBook: Bool
+
+    var body: some View {
+        Text(hasNextBook ? "Swipe or tap again to read the next chapter" : "No more chapters")
+            .font(.callout)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.thinMaterial, in: .capsule)
+            .shadow(radius: 4, y: 2)
+            .accessibilityIdentifier(AID.readerNextChapterToast)
     }
 }

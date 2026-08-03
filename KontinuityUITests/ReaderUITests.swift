@@ -127,6 +127,39 @@ final class ReaderUITests: XCTestCase {
         XCTAssertEqual(app.find(AID.readerPageLabel).label, "1 / 6")
     }
 
+    /// Windrunner's fixture series has a Vol. 4 after this book (unanalysed,
+    /// but still enumerable — `loadNextBookIfNeeded` doesn't filter on
+    /// readability), so this exercises the real two-step advance rather than
+    /// the "no more chapters" branch. Asserts on the page label vanishing —
+    /// Vol. 4 has zero pages, so `chrome`'s label guard hides it entirely —
+    /// rather than on Vol. 4's own content, which is deliberately unreadable.
+    @MainActor
+    func testEndOfBookTapArmsToastThenAdvancesOnSecondTap() {
+        openReader()
+        app.find(AID.readerPageLabel).assertAppears("The reader's page indicator")
+
+        for page in 2 ... 6 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+            XCTAssertTrue(
+                waitForPageLabel("\(page) / 6"),
+                "Tapping the right quarter should advance to page \(page)."
+            )
+        }
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        app.find(AID.readerNextChapterToast).assertAppears("The first forward tap on the last page arms the toast")
+        XCTAssertEqual(
+            app.find(AID.readerPageLabel).label, "6 / 6",
+            "The first tap should arm the toast, not advance yet."
+        )
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertTrue(
+            app.find(AID.readerPageLabel).waitForNonExistence(timeout: 3),
+            "A second forward tap within the window should move on to the next book."
+        )
+    }
+
     /// Polls rather than reading `.label` once — see the doc comment on
     /// `testTapZonesPageAndToggleChromeUnderQuarters`.
     @MainActor

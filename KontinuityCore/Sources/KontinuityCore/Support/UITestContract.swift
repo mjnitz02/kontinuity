@@ -145,6 +145,9 @@ public enum AID {
     public static let readerDone = "reader.done"
     public static let readerPageLabel = "reader.pageLabel"
     public static let readerScrubber = "reader.scrubber"
+    /// The "swipe/tap again to continue" toast shown on the last page of a
+    /// book (READER-DESIGN §2's Komga-style two-step advance).
+    public static let readerNextChapterToast = "reader.nextChapterToast"
 
     // Glasses mode (Mode B, READER-DESIGN §3)
     public static let readerGlassesModeButton = "reader.glassesModeButton"
