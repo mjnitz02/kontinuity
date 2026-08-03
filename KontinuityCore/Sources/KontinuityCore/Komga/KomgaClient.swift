@@ -133,9 +133,16 @@ public struct KomgaClient: KomgaServing {
         return try await get("/api/v1/books/ondeck", query: items)
     }
 
-    public func thumbnailData(for target: KomgaThumbnail) async throws -> Data? {
+    public func thumbnailData(for target: KomgaThumbnail, allowStaleCache: Bool) async throws -> Data? {
         var request = makeRequest(path: target.path, method: "GET")
         request.setValue("image/jpeg", forHTTPHeaderField: "Accept")
+        if allowStaleCache {
+            // Instant, no network attempt — either `URLSession.komga`'s
+            // `URLCache` already has the bytes from an earlier revalidated
+            // fetch, or this throws immediately rather than hanging on a
+            // server that isn't there (PLAN §11).
+            request.cachePolicy = .returnCacheDataDontLoad
+        }
         do {
             return try await send(request)
         } catch KomgaError.notFound {

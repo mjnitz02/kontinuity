@@ -26,7 +26,7 @@
                 configurations: ModelConfiguration(isStoredInMemoryOnly: true)
             )
 
-            if mode == .connected {
+            if mode != .fresh {
                 let server = Server(
                     baseURLString: "http://komga.test",
                     deviceID: UUID(uuidString: "00000000-0000-0000-0000-0000000000AA") ?? UUID(),
@@ -37,14 +37,64 @@
                     lastConnectedDate: .now
                 )
                 container.mainContext.insert(server)
-                try container.mainContext.save()
             }
 
+            if mode == .offlineWithDownloads {
+                seedDownloadedBooks(in: container.mainContext)
+            }
+
+            try container.mainContext.save()
             return container
         }
 
-        /// Serves the canned library instead of building a client from the Keychain.
-        static let provider = KomgaProvider { _, _ in StubKomgaService() }
+        /// Windrunner Vol. 1 (finished) and Vol. 2 (partway through), both
+        /// downloaded — enough for a UI test to assert PLAN §11's fallback
+        /// views: Windrunner shows up offline and Neon Requiem/Halcyon Drift
+        /// (nothing downloaded there) don't; and the series' own book list
+        /// shows only these two, not Vol. 3, with Vol. 2's in-progress state
+        /// preserved.
+        private static func seedDownloadedBooks(in context: ModelContext) {
+            let finished = Book(
+                id: UITestFixture.readBookID,
+                localPage: 190,
+                localReadDate: Date(timeIntervalSince1970: 1_770_000_000),
+                pageHref: "",
+                mediaType: "image/jpeg",
+                seriesID: UITestFixture.inProgressSeriesID,
+                seriesTitle: "Windrunner",
+                title: "Windrunner, Vol. 1",
+                number: "1",
+                numberSort: 1,
+                pagesCount: 190,
+                downloadState: .downloaded,
+                downloadedDate: .now
+            )
+            let inProgress = Book(
+                id: UITestFixture.inProgressBookID,
+                localPage: 42,
+                localReadDate: Date(timeIntervalSince1970: 1_780_000_000),
+                pageHref: "",
+                mediaType: "image/jpeg",
+                seriesID: UITestFixture.inProgressSeriesID,
+                seriesTitle: "Windrunner",
+                title: "Windrunner, Vol. 2",
+                number: "2",
+                numberSort: 2,
+                pagesCount: 190,
+                downloadState: .downloaded,
+                downloadedDate: .now
+            )
+            context.insert(finished)
+            context.insert(inProgress)
+        }
+
+        /// Serves the canned library instead of building a client from the
+        /// Keychain — offline-shaped for `.offline`/`.offlineWithDownloads`
+        /// (PLAN §11).
+        static let provider = KomgaProvider { _, _ in
+            let mode = UITestMode.current
+            return StubKomgaService(offline: mode == .offline || mode == .offlineWithDownloads)
+        }
 
         /// A throwaway Keychain. The connect screen writes an API key on success,
         /// and a UI test must not leave one in the real Keychain — nor read one a

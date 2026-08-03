@@ -23,6 +23,15 @@ public enum UITestMode: String, Sendable {
     case fresh
     /// A saved server backed by an in-memory store and a canned library.
     case connected
+    /// `.connected`, but every server-hit method fails offline-shaped
+    /// (`KomgaError.transport(code: .notConnectedToInternet, …)`) and
+    /// nothing is pre-seeded downloaded — PLAN §11's "nothing to fall back
+    /// to" case.
+    case offline
+    /// `.offline`, plus a handful of pre-seeded downloaded `Book` rows so a
+    /// UI test can assert the offline fallback views actually show what's
+    /// downloaded — and only what's downloaded.
+    case offlineWithDownloads
 
     public static let defaultsKey = "UITestMode"
 
@@ -91,6 +100,10 @@ public enum AID {
     public static let seriesSearchField = "series.search"
     public static let browseEmpty = "browse.empty"
     public static let browseError = "browse.error"
+    /// The persistent "showing downloaded ... only" banner an offline
+    /// fallback view shows so it's never mistaken for the whole library
+    /// (PLAN §11).
+    public static let offlineBanner = "offline.banner"
 
     /// Grid cells and book rows are single accessibility elements — combined so
     /// VoiceOver reads them as one thing — so their unread count and read state

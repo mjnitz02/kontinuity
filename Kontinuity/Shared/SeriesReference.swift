@@ -31,4 +31,28 @@ extension KomgaSeries {
             metadata: KomgaSeriesMetadata(title: book.seriesTitle, status: "")
         )
     }
+
+    /// The same kind of provisional row, built from an offline grid cell
+    /// instead of a book (PLAN §11) — `SeriesDetailView` doesn't know or care
+    /// which one handed it this reference; the offline branch it falls into
+    /// once there behaves exactly like an empty `refreshed` does everywhere
+    /// else. `libraryId` is left empty: `Book` doesn't cache which library a
+    /// series belongs to, and nothing downstream of this reference reads it.
+    ///
+    /// Unlike ``reference(forSeriesOf:)``, `booksCount` isn't zeroed out —
+    /// that convention only works because the online reference is transient,
+    /// replaced within the same task's first await. There's no fetch coming
+    /// to replace this one, so it carries the one count that's actually
+    /// known: how many of this series are downloaded. The read-state counts
+    /// stay at their defaults, and `SeriesCell(showsReadState: false)` is
+    /// what keeps that honest rather than reading as "fully read".
+    static func reference(forOfflineSeries series: OfflineSeriesSummary) -> KomgaSeries {
+        KomgaSeries(
+            id: series.id,
+            libraryId: "",
+            name: series.title,
+            booksCount: series.downloadedBookCount,
+            metadata: KomgaSeriesMetadata(title: series.title, status: "")
+        )
+    }
 }

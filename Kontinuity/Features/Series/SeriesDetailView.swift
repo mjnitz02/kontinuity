@@ -65,14 +65,40 @@ struct SeriesDetailView: View {
             HStack(alignment: .top, spacing: 20) {
                 CoverImage(target: .series(current.id))
                     .frame(width: 220)
-                metadata
+                headerContent
             }
             VStack(alignment: .leading, spacing: 16) {
                 CoverImage(target: .series(current.id))
                     .frame(maxWidth: 220)
-                metadata
+                headerContent
             }
         }
+    }
+
+    @ViewBuilder
+    private var headerContent: some View {
+        if isOfflineFallback {
+            offlineMetadata
+        } else {
+            metadata
+        }
+    }
+
+    /// No live series metadata while offline (PLAN §11) — no summary, genres,
+    /// status, author line, or unread count, none of which this device has a
+    /// cached answer for. Just the title (from the cached `seriesTitle`) and
+    /// how much of it is actually here to read.
+    private var offlineMetadata: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(current.displayTitle)
+                .font(.title.bold())
+                .accessibilityIdentifier(AID.seriesDetailTitle)
+
+            Text("\(offlineBooks.count) downloaded")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var metadata: some View {
@@ -166,7 +192,9 @@ struct SeriesDetailView: View {
                 sortOrderButton
             }
 
-            if feed.phase == .loading {
+            if isOfflineFallback {
+                offlineBookList
+            } else if feed.phase == .loading {
                 ProgressView().frame(maxWidth: .infinity)
             } else if let message = feed.phase.errorMessage, feed.items.isEmpty {
                 ContentUnavailableView {
@@ -223,6 +251,46 @@ struct SeriesDetailView: View {
         bookRows.first { $0.id == bookID }?.downloadState ?? .notDownloaded
     }
 
+    // MARK: - Offline fallback (PLAN §11)
+
+    /// True once a request has failed offline-shaped and this series has at
+    /// least one downloaded book to show instead. Reached with none (a stale
+    /// deep link, say) falls straight through to the same error state as any
+    /// other failed fetch — there's nothing to fall back to.
+    private var isOfflineFallback: Bool {
+        feed.phase.isOffline && !offlineBooks.isEmpty
+    }
+
+    /// `OfflineLibrary.books` decides which books and what order; this just
+    /// resolves those ids back to the `Book` rows they came from — kept
+    /// around as `Book`, not `KomgaBook`, since `offlineBookList` also needs
+    /// `offlineReadState` off each row.
+    private var offlineBookRows: [Book] {
+        let ordered = OfflineLibrary.books(inSeries: series.id, from: bookRows.map(\.offlineSnapshot))
+        let byID = Dictionary(uniqueKeysWithValues: bookRows.map { ($0.id, $0) })
+        return ordered.compactMap { byID[$0.id] }
+    }
+
+    private var offlineBooks: [KomgaBook] {
+        offlineBookRows.map(\.asKomgaBook)
+    }
+
+    /// A local sort, not a re-fetch — `OfflineLibrary.books` already returns
+    /// reading order, so `ascending` only decides whether to reverse it.
+    private var offlineBookList: some View {
+        let rows = ascending ? offlineBookRows : Array(offlineBookRows.reversed())
+        return LazyVStack(spacing: 0) {
+            ForEach(rows) { row in
+                NavigationLink(value: row.asKomgaBook) {
+                    BookRow(book: row.asKomgaBook, downloadState: .downloaded, readStateOverride: row.offlineReadState)
+                }
+                .buttonStyle(.plain)
+                Divider()
+            }
+        }
+        .accessibilityIdentifier(AID.seriesBookList)
+    }
+
     // MARK: - Presentation
 
     /// Nil while the only thing on screen is a `KomgaSeries.reference` built
@@ -275,6 +343,14 @@ struct SeriesDetailView: View {
 struct BookRow: View {
     let book: KomgaBook
     var downloadState: DownloadState = .notDownloaded
+    /// Overrides `book.readState` for an offline-reconstructed book, whose
+    /// `readProgress` is deliberately nil (`Book.offlineReadState`'s doc
+    /// comment) — the offline branches supply this instead.
+    var readStateOverride: KomgaReadState?
+
+    private var readState: KomgaReadState {
+        readStateOverride ?? book.readState
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -298,7 +374,7 @@ struct BookRow: View {
                     .foregroundStyle(.secondary)
             }
 
-            ReadStateLabel(state: book.readState)
+            ReadStateLabel(state: readState)
 
             Image(systemName: "chevron.right")
                 .font(.caption)
@@ -317,7 +393,7 @@ struct BookRow: View {
     }
 
     private var accessibilityLabel: String {
-        var label = "\(book.displayTitle), \(book.readState.label)"
+        var label = "\(book.displayTitle), \(readState.label)"
         if let downloadLabel {
             label += ", \(downloadLabel)"
         }

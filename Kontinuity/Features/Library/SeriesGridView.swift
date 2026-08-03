@@ -8,6 +8,7 @@
 //
 
 import KontinuityCore
+import SwiftData
 import SwiftUI
 
 struct SeriesGridView: View {
@@ -21,15 +22,31 @@ struct SeriesGridView: View {
     @State private var sort: SeriesSort = .title
     /// Nil shows every series regardless of read state.
     @State private var readFilter: KomgaReadStatus?
+    /// Only read when a fetch fails offline-shaped and this is the All Series
+    /// root (`libraryID == nil`) — a library-specific grid has no way to know
+    /// which cached series belong to it (PLAN §11's scope boundary).
+    @Query private var bookRows: [Book]
 
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 16)]
 
     var body: some View {
+        // A genuine sibling row, not a `.safeAreaInset` — that interacts
+        // badly with `.searchable`'s own top safe-area content and silently
+        // never renders (found the hard way, against a real UI test).
+        VStack(spacing: 0) {
+            if isOfflineFallback {
+                OfflineBanner()
+            }
+            scrollContent
+        }
+    }
+
+    private var scrollContent: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 20) {
-                ForEach(feed.items) { series in
+                ForEach(displayedSeries) { series in
                     NavigationLink(value: series) {
-                        SeriesCell(series: series)
+                        SeriesCell(series: series, showsReadState: !isOfflineFallback)
                     }
                     .buttonStyle(.plain)
                     .onAppear { feed.loadMoreIfNeeded(currentItem: series) }
@@ -55,36 +72,41 @@ struct SeriesGridView: View {
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $searchText, prompt: "Search series")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Picker("Read status", selection: $readFilter) {
-                        Text("All").tag(KomgaReadStatus?.none)
-                        ForEach(KomgaReadStatus.allCases, id: \.self) { status in
-                            Text(status.label).tag(KomgaReadStatus?.some(status))
+            // Sort and read-status filtering are both server-driven, and
+            // meaningless over the handful of local rows an offline fallback
+            // shows (PLAN §11).
+            if !isOfflineFallback {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Picker("Read status", selection: $readFilter) {
+                            Text("All").tag(KomgaReadStatus?.none)
+                            ForEach(KomgaReadStatus.allCases, id: \.self) { status in
+                                Text(status.label).tag(KomgaReadStatus?.some(status))
+                            }
                         }
+                    } label: {
+                        Label(
+                            "Filter",
+                            systemImage: readFilter == nil
+                                ? "line.3.horizontal.decrease.circle"
+                                : "line.3.horizontal.decrease.circle.fill"
+                        )
                     }
-                } label: {
-                    Label(
-                        "Filter",
-                        systemImage: readFilter == nil
-                            ? "line.3.horizontal.decrease.circle"
-                            : "line.3.horizontal.decrease.circle.fill"
-                    )
                 }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Picker("Sort", selection: $sort) {
-                        ForEach(SeriesSort.allCases, id: \.self) { option in
-                            Text(option.label).tag(option)
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Picker("Sort", selection: $sort) {
+                            ForEach(SeriesSort.allCases, id: \.self) { option in
+                                Text(option.label).tag(option)
+                            }
                         }
+                    } label: {
+                        Label("Sort", systemImage: "arrow.up.arrow.down")
                     }
-                } label: {
-                    Label("Sort", systemImage: "arrow.up.arrow.down")
+                    // Sorting is server-side, so it's meaningless while a search is
+                    // running — Komga orders those by relevance instead.
+                    .disabled(!searchText.trimmed.isEmpty)
                 }
-                // Sorting is server-side, so it's meaningless while a search is
-                // running — Komga orders those by relevance instead.
-                .disabled(!searchText.trimmed.isEmpty)
             }
         }
         .refreshable { await feed.refresh() }
@@ -120,11 +142,17 @@ struct SeriesGridView: View {
         }
     }
 
-    /// The three states a grid can be in besides "showing series".
+    /// The three states a grid can be in besides "showing series". The offline
+    /// fallback isn't a fourth: with something to show, it just replaces
+    /// `feed.items` as this view's content (see `displayedSeries`); with
+    /// nothing downloaded either, it's indistinguishable from the plain
+    /// "can't reach it" state below — there's nothing to fall back to.
     @ViewBuilder
     private var status: some View {
         if feed.phase == .loading {
             ProgressView()
+        } else if isOfflineFallback {
+            EmptyView()
         } else if let message = feed.phase.errorMessage, feed.items.isEmpty {
             ContentUnavailableView {
                 Label("Couldn't load series", systemImage: "exclamationmark.triangle")
@@ -145,6 +173,31 @@ struct SeriesGridView: View {
             )
             .accessibilityIdentifier(AID.browseEmpty)
         }
+    }
+
+    // MARK: - Offline fallback (PLAN §11)
+
+    /// True once a request has failed offline-shaped and there's at least one
+    /// downloaded series to show instead — the All Series root only, per
+    /// §11's scope boundary.
+    private var isOfflineFallback: Bool {
+        libraryID == nil && feed.phase.isOffline && !offlineSeriesSummaries.isEmpty
+    }
+
+    private var offlineSeriesSummaries: [OfflineSeriesSummary] {
+        guard libraryID == nil, feed.phase.isOffline else { return [] }
+        return OfflineLibrary.series(from: bookRows.map(\.offlineSnapshot))
+    }
+
+    /// Client-side, unlike the server-side search the online grid uses —
+    /// there's no server to ask, and it's a handful of rows.
+    private var displayedSeries: [KomgaSeries] {
+        guard isOfflineFallback else { return feed.items }
+        let term = searchText.trimmed
+        let matches = term.isEmpty
+            ? offlineSeriesSummaries
+            : offlineSeriesSummaries.filter { $0.title.localizedCaseInsensitiveContains(term) }
+        return matches.map { KomgaSeries.reference(forOfflineSeries: $0) }
     }
 
     private func emptyDescription(term: String) -> String {
@@ -169,18 +222,24 @@ struct SeriesGridView: View {
 
 struct SeriesCell: View {
     let series: KomgaSeries
+    /// False for an offline fallback cell (PLAN §11): read state is
+    /// server-computed and the offline summary this cell was built from
+    /// doesn't carry it — showing "Read" or an unread count derived from
+    /// zeroed-out fields would be inventing an answer, not reporting one.
+    /// Only the downloaded count is actually known there.
+    var showsReadState = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             CoverImage(target: .series(series.id))
                 .overlay(alignment: .topTrailing) {
-                    if series.booksUnreadCount > 0 {
+                    if showsReadState, series.booksUnreadCount > 0 {
                         UnreadBadge(count: series.booksUnreadCount)
                             .padding(6)
                     }
                 }
                 .overlay(alignment: .bottom) {
-                    if series.booksInProgressCount > 0 {
+                    if showsReadState, series.booksInProgressCount > 0 {
                         ReadProgressBar(fraction: progressFraction)
                     }
                 }
@@ -215,6 +274,7 @@ struct SeriesCell: View {
 
     private var subtitle: String {
         let books = "\(series.booksCount) book\(series.booksCount == 1 ? "" : "s")"
+        guard showsReadState else { return books }
         if series.isFullyRead {
             return "\(books) · Read"
         }

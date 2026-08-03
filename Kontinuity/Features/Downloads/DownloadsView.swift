@@ -223,22 +223,3 @@ struct DownloadsView: View {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }
-
-private extension Book {
-    /// Reconstructs a `KomgaBook` from the cached metadata so the reader can
-    /// open a downloaded book with no server involved at all — the whole
-    /// point of the "Downloaded" root (PLAN §7). `readProgress` is left nil:
-    /// `ReaderModel` resolves the resume position through `ProgressionSyncEngine`
-    /// against this same row, not from this field.
-    var asKomgaBook: KomgaBook {
-        KomgaBook(
-            id: id,
-            seriesId: seriesID ?? "",
-            seriesTitle: seriesTitle ?? "",
-            name: title ?? id,
-            sizeBytes: sizeBytes ?? 0,
-            media: KomgaMedia(pagesCount: pagesCount ?? 0),
-            metadata: KomgaBookMetadata(title: title ?? "", number: number ?? "", numberSort: numberSort ?? 0)
-        )
-    }
-}

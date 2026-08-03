@@ -40,7 +40,7 @@ final class ThumbnailLoader {
         }
 
         let task = Task { [service] () -> UIImage? in
-            guard let data = try? await service.thumbnailData(for: target),
+            guard let data = await Self.fetchData(for: target, service: service),
                   let image = UIImage(data: data)
             else {
                 return nil
@@ -65,5 +65,19 @@ final class ThumbnailLoader {
     /// re-downloading, so this is cheap.
     func invalidate() {
         cache.removeAllObjects()
+    }
+
+    /// A cover you've genuinely seen before shouldn't fail to load just
+    /// because the server is unreachable right now (PLAN §11) — an
+    /// offline-classified failure retries once against whatever's already in
+    /// `URLSession.komga`'s `URLCache`, rather than going straight to the
+    /// placeholder.
+    private static func fetchData(for target: KomgaThumbnail, service: any KomgaServing) async -> Data? {
+        do {
+            return try await service.thumbnailData(for: target)
+        } catch {
+            guard (error as? KomgaError)?.isOffline == true else { return nil }
+            return try? await service.thumbnailData(for: target, allowStaleCache: true)
+        }
     }
 }

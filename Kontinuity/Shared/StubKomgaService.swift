@@ -27,27 +27,48 @@
             roles: ["USER", "FILE_DOWNLOAD", "PAGE_STREAMING"]
         )
 
+        /// PLAN §11's offline-simulation mode (`UITestMode.offline` /
+        /// `.offlineWithDownloads`): every server-hit method fails the same
+        /// way a real dropped connection would, so the app's own
+        /// `KomgaError.isOffline` classification is what's under test, not a
+        /// faked-out shortcut.
+        var offline = false
+
+        private func checkOnline() throws {
+            guard !offline else {
+                throw KomgaError.transport(code: .notConnectedToInternet, description: "No connection to the server.")
+            }
+        }
+
         // MARK: - Connect surface
 
-        func checkReachable() async throws {}
+        func checkReachable() async throws {
+            try checkOnline()
+        }
 
         func currentUser() async throws -> KomgaUser {
-            user
+            try checkOnline()
+            return user
         }
 
         func createAPIKey(comment: String) async throws -> KomgaAPIKey {
-            KomgaAPIKey(id: "stub-key", userId: user.id, key: "stub", comment: comment, createdDate: .now)
+            try checkOnline()
+            return KomgaAPIKey(id: "stub-key", userId: user.id, key: "stub", comment: comment, createdDate: .now)
         }
 
-        func deleteAPIKey(id _: String) async throws {}
+        func deleteAPIKey(id _: String) async throws {
+            try checkOnline()
+        }
 
         // MARK: - Browse
 
         func libraries() async throws -> [KomgaLibrary] {
-            Fixtures.libraries
+            try checkOnline()
+            return Fixtures.libraries
         }
 
         func series(matching query: SeriesQuery) async throws -> KomgaPage<KomgaSeries> {
+            try checkOnline()
             var matches = Fixtures.series
             if let libraryID = query.libraryID {
                 matches = matches.filter { $0.libraryId == libraryID }
@@ -67,6 +88,7 @@
         }
 
         func series(id: String) async throws -> KomgaSeries {
+            try checkOnline()
             guard let series = Fixtures.series.first(where: { $0.id == id }) else {
                 throw KomgaError.notFound
             }
@@ -74,6 +96,7 @@
         }
 
         func books(inSeries seriesID: String, matching query: BookQuery) async throws -> KomgaPage<KomgaBook> {
+            try checkOnline()
             var matches = Fixtures.books.filter { $0.seriesId == seriesID }
             if !query.readStatus.isEmpty {
                 let wanted = Set(query.readStatus)
@@ -88,6 +111,7 @@
         }
 
         func book(id: String) async throws -> KomgaBook {
+            try checkOnline()
             guard let book = Fixtures.books.first(where: { $0.id == id }) else {
                 throw KomgaError.notFound
             }
@@ -95,6 +119,7 @@
         }
 
         func keepReading(matching query: BookQuery) async throws -> KomgaPage<KomgaBook> {
+            try checkOnline()
             var matches = Fixtures.books.filter { $0.status == .inProgress }
             if let libraryID = query.libraryID {
                 matches = matches.filter { $0.libraryId == libraryID }
@@ -104,6 +129,7 @@
         }
 
         func onDeck(matching query: BookQuery) async throws -> KomgaPage<KomgaBook> {
+            try checkOnline()
             // Komga's rule: the first unread book of a series that has at least one
             // book read and nothing in progress.
             let eligible = Fixtures.series.filter { $0.booksReadCount > 0 && $0.booksInProgressCount == 0 }
@@ -116,12 +142,14 @@
         }
 
         func thumbnailData(for target: KomgaThumbnail) async throws -> Data? {
-            Fixtures.poster(for: target)
+            try checkOnline()
+            return Fixtures.poster(for: target)
         }
 
         // MARK: - Reader
 
         func divinaManifest(forBook bookID: String) async throws -> KomgaDivinaManifest {
+            try checkOnline()
             guard let book = Fixtures.books.first(where: { $0.id == bookID }) else {
                 throw KomgaError.notFound
             }
@@ -143,10 +171,12 @@
         }
 
         func pageImageData(at href: String) async throws -> Data {
-            Fixtures.pageImage(at: href)
+            try checkOnline()
+            return Fixtures.pageImage(at: href)
         }
 
         func putProgression(bookID _: String, write _: ProgressionWrite, device _: KomgaDevice) async throws {
+            try checkOnline()
             // Verifying the real write path is LiveKomgaTests's job, not the
             // stub's — the UI tests only need paging and the resume position to
             // work, neither of which depends on this landing anywhere.
@@ -158,7 +188,8 @@
         /// uses — so a UI test's download actually exercises
         /// `CBZArchive`/`LocalBookStore`, not a faked-out shortcut.
         func fileData(forBook bookID: String) async throws -> Data {
-            try Self.zipFixture(forBook: bookID)
+            try checkOnline()
+            return try Self.zipFixture(forBook: bookID)
         }
 
         /// The stub has no real server to point at, so this writes the same
@@ -219,298 +250,13 @@
         /// when every book is, UNREAD when none have been touched, IN_PROGRESS
         /// for everything in between.
         var readStatus: KomgaReadStatus {
-            if isFullyRead { return .read }
-            if booksReadCount == 0 && booksInProgressCount == 0 { return .unread }
+            if isFullyRead {
+                return .read
+            }
+            if booksReadCount == 0, booksInProgressCount == 0 {
+                return .unread
+            }
             return .inProgress
-        }
-    }
-
-    // MARK: - Fixtures
-
-    enum Fixtures {
-        static let libraries = [
-            KomgaLibrary(id: UITestFixture.mangaLibraryID, name: "Manga"),
-            KomgaLibrary(id: UITestFixture.comicsLibraryID, name: "Comics")
-        ]
-
-        static let series: [KomgaSeries] = [
-            KomgaSeries(
-                id: UITestFixture.inProgressSeriesID,
-                libraryId: UITestFixture.mangaLibraryID,
-                name: "windrunner",
-                booksCount: 4,
-                booksReadCount: 1,
-                booksUnreadCount: 2,
-                booksInProgressCount: 1,
-                metadata: KomgaSeriesMetadata(
-                    title: "Windrunner",
-                    titleSort: "Windrunner",
-                    summary: "Mika discovers a pair of storm-powered skates and a rooftop city of racers.",
-                    status: "ONGOING",
-                    publisher: "Kessho House",
-                    language: "en",
-                    ageRating: 13,
-                    genres: ["action", "shounen"],
-                    totalBookCount: 37
-                ),
-                booksMetadata: KomgaBooksMetadata(
-                    authors: [KomgaAuthor(name: "R. Kessho", role: "writer")],
-                    summary: "Windrunner, volume by volume."
-                )
-            ),
-            KomgaSeries(
-                id: UITestFixture.finishedSeriesID,
-                libraryId: UITestFixture.mangaLibraryID,
-                name: "neon-requiem",
-                booksCount: 2,
-                booksReadCount: 2,
-                metadata: KomgaSeriesMetadata(
-                    title: "Neon Requiem",
-                    titleSort: "Neon Requiem",
-                    summary: "A city of chrome towers is about to explode.",
-                    status: "ENDED",
-                    publisher: "Kessho House",
-                    genres: ["cyberpunk"],
-                    readingDirection: KomgaReadingDirection.rightToLeft.rawValue
-                )
-            ),
-            KomgaSeries(
-                id: UITestFixture.comicsSeriesID,
-                libraryId: UITestFixture.comicsLibraryID,
-                name: "halcyon-drift",
-                booksCount: 1,
-                booksUnreadCount: 1,
-                metadata: KomgaSeriesMetadata(
-                    title: "Halcyon Drift",
-                    titleSort: "Halcyon Drift",
-                    summary: "Two deserters from opposite sides of a galactic war.",
-                    status: "ONGOING",
-                    publisher: "Driftwood Press"
-                )
-            )
-        ]
-
-        static let books: [KomgaBook] = [
-            book(
-                id: UITestFixture.readBookID,
-                number: 1,
-                title: "Windrunner, Vol. 1",
-                progress: KomgaReadProgress(
-                    page: 190,
-                    completed: true,
-                    readDate: Date(timeIntervalSince1970: 1_770_000_000),
-                    deviceName: "Matt's iPad"
-                )
-            ),
-            book(
-                id: UITestFixture.inProgressBookID,
-                number: 2,
-                title: "Windrunner, Vol. 2",
-                progress: KomgaReadProgress(
-                    page: 42,
-                    completed: false,
-                    readDate: Date(timeIntervalSince1970: 1_780_000_000),
-                    deviceName: "Matt's iPad"
-                )
-            ),
-            // Readable, with fixture pages behind it — what the reader UI tests open.
-            book(id: UITestFixture.unreadBookID, number: 3, title: "Windrunner, Vol. 3", pages: 6),
-            // Zero pages and status UNKNOWN: Komga has the file but hasn't analysed
-            // it. The UI must say so rather than offering an empty reader.
-            book(
-                id: UITestFixture.unanalysedBookID,
-                number: 4,
-                title: "Windrunner, Vol. 4",
-                pages: 0,
-                mediaStatus: "UNKNOWN"
-            ),
-            book(
-                id: "book-neon-requiem-1",
-                number: 1,
-                title: "Neon Requiem, Vol. 1",
-                seriesID: UITestFixture.finishedSeriesID,
-                seriesTitle: "Neon Requiem",
-                progress: KomgaReadProgress(
-                    page: 364,
-                    completed: true,
-                    readDate: Date(timeIntervalSince1970: 1_760_000_000),
-                    deviceName: "Matt's iPad"
-                )
-            ),
-            book(
-                id: "book-neon-requiem-2",
-                number: 2,
-                title: "Neon Requiem, Vol. 2",
-                seriesID: UITestFixture.finishedSeriesID,
-                seriesTitle: "Neon Requiem",
-                progress: KomgaReadProgress(
-                    page: 296,
-                    completed: true,
-                    readDate: Date(timeIntervalSince1970: 1_765_000_000),
-                    deviceName: "Matt's iPad"
-                )
-            ),
-            book(
-                id: "book-halcyon-drift-1",
-                number: 1,
-                title: "Halcyon Drift, Vol. 1",
-                seriesID: UITestFixture.comicsSeriesID,
-                seriesTitle: "Halcyon Drift",
-                libraryID: UITestFixture.comicsLibraryID
-            )
-        ]
-
-        private static func book(
-            id: String,
-            number: Int,
-            title: String,
-            seriesID: String = UITestFixture.inProgressSeriesID,
-            seriesTitle: String = "Windrunner",
-            libraryID: String = UITestFixture.mangaLibraryID,
-            pages: Int = 190,
-            mediaStatus: String = "READY",
-            progress: KomgaReadProgress? = nil
-        ) -> KomgaBook {
-            KomgaBook(
-                id: id,
-                seriesId: seriesID,
-                seriesTitle: seriesTitle,
-                libraryId: libraryID,
-                name: title,
-                sizeBytes: 32_000_000,
-                size: "30.5 MiB",
-                media: KomgaMedia(status: mediaStatus, pagesCount: pages),
-                metadata: KomgaBookMetadata(
-                    title: title,
-                    number: String(number),
-                    numberSort: Double(number),
-                    summary: "Volume \(number).",
-                    releaseDate: KomgaDay(year: 2018, month: 1, day: number),
-                    authors: [KomgaAuthor(name: "R. Kessho", role: "writer")]
-                ),
-                readProgress: progress
-            )
-        }
-
-        /// A flat-colour JPEG, drawn rather than bundled so there are no binary
-        /// fixtures in the repo. The colour is derived from the id, so a given
-        /// series looks the same on every run — which is what makes the launch
-        /// screenshots comparable between CI runs.
-        static func poster(for target: KomgaThumbnail) -> Data? {
-            let seed: String = switch target {
-            case let .series(id): id
-            case let .book(id): id
-            }
-            // Not `hashValue`: Swift seeds string hashing per process, so that would
-            // give a different colour on every launch — the opposite of the point.
-            let digest = seed.unicodeScalars.reduce(UInt32(2_166_136_261)) { hash, scalar in
-                (hash ^ (scalar.value & 0xFF)) &* 16_777_619
-            }
-            let hue = Double(digest % 360) / 360.0
-            let size = CGSize(width: 200, height: 300)
-            let image = UIGraphicsImageRenderer(size: size).image { context in
-                UIColor(hue: hue, saturation: 0.45, brightness: 0.65, alpha: 1).setFill()
-                context.fill(CGRect(origin: .zero, size: size))
-            }
-            return image.jpegData(compressionQuality: 0.8)
-        }
-
-        /// A flat-colour JPEG for a reader page, keyed by its href so the same
-        /// page looks the same across a run without any binary fixtures in the
-        /// repo — same technique as ``poster(for:)``, sized to what the stub's
-        /// manifest declares (800×1200, matching KOMGA-API §2's measured aspect).
-        static func pageImage(at href: String) -> Data {
-            let digest = href.unicodeScalars.reduce(UInt32(2_166_136_261)) { hash, scalar in
-                (hash ^ (scalar.value & 0xFF)) &* 16_777_619
-            }
-            let hue = Double(digest % 360) / 360.0
-            let size = CGSize(width: 800, height: 1200)
-            let image = UIGraphicsImageRenderer(size: size).image { context in
-                UIColor(hue: hue, saturation: 0.55, brightness: 0.5, alpha: 1).setFill()
-                context.fill(CGRect(origin: .zero, size: size))
-            }
-            return image.jpegData(compressionQuality: 0.8) ?? Data()
-        }
-    }
-
-    /// The smallest possible ZIP writer — stored (uncompressed) entries only,
-    /// zero-padded page numbers so natural sort matches insertion order.
-    /// `CBZArchive` is a reader; this is its mirror image, kept here rather
-    /// than in Core because nothing at runtime ever needs to *write* a CBZ.
-    private enum StoredZipWriter {
-        static func make(pages: [Data]) -> Data {
-            var body = Data()
-            var central = Data()
-            var offsets: [Int] = []
-
-            let names = pages.indices.map { String(format: "%04d.jpg", $0 + 1) }
-            for (page, name) in zip(pages, names) {
-                offsets.append(body.count)
-                let nameBytes = Data(name.utf8)
-                body.appendUInt32(0x0403_4B50)
-                body.appendUInt16(20)
-                body.appendUInt16(0)
-                body.appendUInt16(0) // method: stored
-                body.appendUInt16(0)
-                body.appendUInt16(0)
-                body.appendUInt32(0) // crc32 — unchecked by CBZArchive
-                body.appendUInt32(UInt32(page.count))
-                body.appendUInt32(UInt32(page.count))
-                body.appendUInt16(UInt16(nameBytes.count))
-                body.appendUInt16(0)
-                body.append(nameBytes)
-                body.append(page)
-            }
-
-            for (index, name) in names.enumerated() {
-                let nameBytes = Data(name.utf8)
-                let size = UInt32(pages[index].count)
-                central.appendUInt32(0x0201_4B50)
-                central.appendUInt16(20)
-                central.appendUInt16(20)
-                central.appendUInt16(0)
-                central.appendUInt16(0)
-                central.appendUInt16(0)
-                central.appendUInt16(0)
-                central.appendUInt32(0)
-                central.appendUInt32(size)
-                central.appendUInt32(size)
-                central.appendUInt16(UInt16(nameBytes.count))
-                central.appendUInt16(0)
-                central.appendUInt16(0)
-                central.appendUInt16(0)
-                central.appendUInt16(0)
-                central.appendUInt32(0)
-                central.appendUInt32(UInt32(offsets[index]))
-                central.append(nameBytes)
-            }
-
-            var archive = body
-            let centralDirOffset = archive.count
-            archive.append(central)
-            archive.appendUInt32(0x0605_4B50)
-            archive.appendUInt16(0)
-            archive.appendUInt16(0)
-            archive.appendUInt16(UInt16(pages.count))
-            archive.appendUInt16(UInt16(pages.count))
-            archive.appendUInt32(UInt32(central.count))
-            archive.appendUInt32(UInt32(centralDirOffset))
-            archive.appendUInt16(0)
-            return archive
-        }
-    }
-
-    private extension Data {
-        mutating func appendUInt16(_ value: UInt16) {
-            append(UInt8(value & 0xFF))
-            append(UInt8((value >> 8) & 0xFF))
-        }
-
-        mutating func appendUInt32(_ value: UInt32) {
-            append(UInt8(value & 0xFF))
-            append(UInt8((value >> 8) & 0xFF))
-            append(UInt8((value >> 16) & 0xFF))
-            append(UInt8((value >> 24) & 0xFF))
         }
     }
 

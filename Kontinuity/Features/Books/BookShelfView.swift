@@ -101,7 +101,7 @@ struct BookShelfView: View {
             ProgressView()
         } else if let message = feed.phase.errorMessage, feed.items.isEmpty {
             ContentUnavailableView {
-                Label("Couldn't load \(shelf.title)", systemImage: "exclamationmark.triangle")
+                Label(errorTitle, systemImage: "exclamationmark.triangle")
             } description: {
                 Text(message)
             } actions: {
@@ -116,6 +116,17 @@ struct BookShelfView: View {
             )
             .accessibilityIdentifier(AID.browseEmpty)
         }
+    }
+
+    /// Both shelves are server-computed (Keep Reading needs the whole
+    /// library's read state; On Deck needs the whole library's series
+    /// structure) — neither has an offline fallback, so a connection
+    /// failure reads as an expected limitation rather than a bug.
+    private var errorTitle: String {
+        if feed.phase.isOffline {
+            return "\(shelf.title) needs a connection to your server"
+        }
+        return "Couldn't load \(shelf.title)"
     }
 
     private struct Query: Hashable {

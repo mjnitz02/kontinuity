@@ -58,6 +58,16 @@ public protocol KomgaServing: Sendable {
     /// rather than something worth showing an error for.
     func thumbnailData(for target: KomgaThumbnail) async throws -> Data?
 
+    /// The same poster, optionally willing to answer from a stale local cache
+    /// instead of the network (PLAN §11: a cover you've genuinely seen before
+    /// shouldn't fail to load just because the server is unreachable right
+    /// now). Each overload defaults to the other in a protocol extension, so
+    /// a conformance only has to implement whichever one it actually cares
+    /// about — `KomgaClient` implements this one for real; everything else
+    /// (`StubKomgaService` included) keeps its existing single-argument
+    /// implementation unchanged.
+    func thumbnailData(for target: KomgaThumbnail, allowStaleCache: Bool) async throws -> Data?
+
     // MARK: - Reader (phase 3)
 
     /// `GET /opds/v2/books/{id}/manifest/divina` — the reader's page list, with
@@ -85,6 +95,16 @@ public protocol KomgaServing: Sendable {
     /// app suspension (PLAN §6) — rather than the service's own foreground
     /// session, which ``fileData(forBook:)`` uses.
     func fileDownloadRequest(forBook bookID: String) -> URLRequest
+}
+
+public extension KomgaServing {
+    func thumbnailData(for target: KomgaThumbnail) async throws -> Data? {
+        try await thumbnailData(for: target, allowStaleCache: false)
+    }
+
+    func thumbnailData(for target: KomgaThumbnail, allowStaleCache _: Bool) async throws -> Data? {
+        try await thumbnailData(for: target)
+    }
 }
 
 /// The `device.id`/`device.name` pair every progression write carries

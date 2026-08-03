@@ -20,13 +20,24 @@ enum FeedPhase: Equatable {
     case loaded
     /// A further page in flight; the items already shown stay put.
     case loadingMore
-    case failed(String)
+    /// `isOffline` mirrors `KomgaError.isOffline` on whatever failed the
+    /// request — an offline-classified browse screen falls back to a
+    /// locally-derived view instead of this error (PLAN §11); a 401 or 500
+    /// still shows it as-is.
+    case failed(String, isOffline: Bool)
 
     var errorMessage: String? {
-        if case let .failed(message) = self {
+        if case let .failed(message, _) = self {
             return message
         }
         return nil
+    }
+
+    var isOffline: Bool {
+        if case let .failed(_, offline) = self {
+            return offline
+        }
+        return false
     }
 }
 
@@ -117,10 +128,11 @@ final class PagedFeed<Element: Identifiable & Hashable & Sendable & Decodable> {
                 phase = .loaded
             } catch {
                 guard !Task.isCancelled, !(error is CancellationError) else { return }
-                let message = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
+                let komgaError = error as? KomgaError
+                let message = komgaError?.errorDescription ?? error.localizedDescription
                 // A failed *further* page shouldn't blank a list the user is
                 // reading; keep the items and report the failure alongside.
-                phase = .failed(message)
+                phase = .failed(message, isOffline: komgaError?.isOffline ?? false)
             }
         }
     }
