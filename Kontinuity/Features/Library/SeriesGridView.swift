@@ -39,6 +39,14 @@ struct SeriesGridView: View {
                 ProgressView().padding(.bottom, 24)
             }
         }
+        // `.searchable`'s floating bottom field (iPhone/compact width) isn't
+        // reflected in a plain `ScrollView`'s own safe area the way it is for
+        // `List`, so without this the last row's title sits behind it and its
+        // tap target is unreachable (PLAN 6B §A). Sized generously rather than
+        // to the field's exact height, which isn't published API.
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 60)
+        }
         .accessibilityIdentifier(AID.seriesGrid)
         .overlay { status }
         .navigationTitle(title)

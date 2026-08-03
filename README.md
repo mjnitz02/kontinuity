@@ -81,11 +81,11 @@ A disposable instance to point this at:
 [komga-docker](https://github.com/gotson/komga#docker) — a single container bind-mounting
 a config and a library directory does the job.
 
-Deploying to a real iPad with a free Apple ID:
+Deploying to a real iPad (paid Apple Developer Program membership — profiles last a year):
 
 ```sh
 cp Makefile.local.example Makefile.local   # set DEVICE_ID
-make deploy                                # re-run weekly; free profiles last 7 days
+make deploy
 ```
 
 Or `make ipa` for an unsigned build to import into SideStore/AltStore, which refresh

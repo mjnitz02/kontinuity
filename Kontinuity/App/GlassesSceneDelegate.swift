@@ -28,6 +28,7 @@ final class GlassesSceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.backgroundColor = .black
         if let glasses = AppDelegate.glassesCoordinator {
             window.rootViewController = UIHostingController(rootView: GlassesExternalView(glasses: glasses))
+            glasses.externalSceneDidConnect()
         } else {
             window.rootViewController = UIHostingController(rootView: Color.black.ignoresSafeArea())
         }
@@ -37,5 +38,6 @@ final class GlassesSceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidDisconnect(_: UIScene) {
         window = nil
+        AppDelegate.glassesCoordinator?.externalSceneDidDisconnect()
     }
 }

@@ -144,4 +144,14 @@ public enum AID {
     public static let glassesSurface = "glasses.surface"
     public static let glassesStatusLabel = "glasses.statusLabel"
     public static let glassesExit = "glasses.exit"
+
+    /// Chrome reached by the centre-half tap (PLAN 6B §C/§D, READER-DESIGN
+    /// §3's iPhone section) — the touch-reachable equivalents for the
+    /// keyboard-only controls, since a phone in landscape has no keyboard.
+    public static let glassesPageLabel = "glasses.pageLabel"
+    public static let glassesNextBook = "glasses.nextBook"
+    public static let glassesDimDecrease = "glasses.dimDecrease"
+    public static let glassesDimIncrease = "glasses.dimIncrease"
+    public static let glassesAutoScrollToggle = "glasses.autoScrollToggle"
+    public static let glassesTouchToggle = "glasses.touchToggle"
 }

@@ -48,12 +48,27 @@ final class GlassesCoordinator {
     private(set) var pageSources: [PageSource] = []
     private(set) var loader: PageImageLoader?
 
-    /// Whether a real external `UIScreen` is currently connected — bridged
-    /// from `UIScreen.didConnectNotification`/`didDisconnectNotification`
-    /// below. Independent of `isActive`: the reader decides, once glasses
-    /// mode is active, whether to route content to the external scene or
-    /// render the READER-DESIGN §3 iPad-fallback path in place.
-    private(set) var isExternalDisplayConnected: Bool
+    /// Retained so `updateGeometry(width:height:)` can recompute `bands`
+    /// against a new size without the caller re-supplying the manifest.
+    private var pageGeometries: [PageGeometry] = []
+
+    /// "Are glasses attached?" (READER-DESIGN §3's two-signals table) —
+    /// bridged from `UIScreen.didConnectNotification`/
+    /// `didDisconnectNotification` below. A fine trigger for offering or
+    /// auto-entering the mode; **not** what gates touch or the panel
+    /// blackout — mirroring makes this true while `isExternalSceneConnected`
+    /// stays false, which is exactly the case a screen count alone can't
+    /// distinguish.
+    private(set) var isGlassesAttached: Bool
+
+    /// "Do I have a second surface to draw on?" — set by
+    /// `GlassesSceneDelegate.scene(_:willConnectTo:)` and cleared in
+    /// `sceneDidDisconnect`, via `AppDelegate`'s static handoff. This is the
+    /// only signal that means "there is a real, independent
+    /// `…RoleExternalDisplayNonInteractive` scene" — under mirroring the
+    /// panel *is* the thing the glasses show, so only this flag may black it
+    /// out or gate touch (READER-DESIGN §3).
+    private(set) var isExternalSceneConnected = false
 
     /// Off by default, and re-armed to `false` every `enter()` — "a blanket
     /// resting on a capacitive screen will page through the entire volume"
@@ -94,7 +109,7 @@ final class GlassesCoordinator {
         self.settings = settings
         dimLevel = settings.dimLevel
         autoScrollSpeed = settings.autoScrollSpeed
-        isExternalDisplayConnected = Self.hasExternalScreen()
+        isGlassesAttached = Self.hasExternalScreen()
         (eventStream, eventContinuation) = AsyncStream<Bool>.makeStream()
         startScreenObserving()
     }
@@ -113,25 +128,48 @@ final class GlassesCoordinator {
     /// `loader` so either render target can draw from this instance alone —
     /// glasses mode reuses whatever `ReaderModel` already fetched rather
     /// than re-fetching the manifest.
+    ///
+    /// Enters at the first band of `startingPageIndex` — Mode A's currently
+    /// open page — rather than always band 0 of the book (gap 2, PLAN 6B
+    /// §C): entering glasses mode, or auto-rotating into it on iPhone, must
+    /// not throw the reader back to page 1.
     func enter(
         pageSources: [PageSource],
         pageGeometries: [PageGeometry],
         loader: PageImageLoader,
-        screenWidth: Double,
-        screenHeight: Double
+        startingPageIndex: Int,
+        screenSize: CGSize
     ) {
         self.pageSources = pageSources
+        self.pageGeometries = pageGeometries
         self.loader = loader
         bands = BandLayout.bands(
             for: pageGeometries,
-            screenWidth: screenWidth,
-            screenHeight: screenHeight,
+            screenWidth: screenSize.width,
+            screenHeight: screenSize.height,
             overlap: settings.bandOverlap
         )
-        currentBandIndex = 0
+        currentBandIndex = firstBandIndex(forPage: startingPageIndex)
         touchArmed = false
         isActive = true
         UIApplication.shared.isIdleTimerDisabled = true
+    }
+
+    /// Recomputes `bands` for a new size — a rotation while Mode B is active
+    /// (gap 3, PLAN 6B §C) — preserving position as **(page index, fraction
+    /// through that page's bands)** rather than a raw band index, since the
+    /// band count per page changes with the geometry and a raw index would
+    /// drift (READER-DESIGN §3's iPhone section).
+    func updateGeometry(width: Double, height: Double) {
+        guard isActive, !bands.isEmpty else { return }
+        let position = currentPosition()
+        bands = BandLayout.bands(
+            for: pageGeometries,
+            screenWidth: width,
+            screenHeight: height,
+            overlap: settings.bandOverlap
+        )
+        currentBandIndex = bandIndex(forPage: position.pageIndex, fraction: position.fraction)
     }
 
     func exit() {
@@ -140,6 +178,38 @@ final class GlassesCoordinator {
         autoScrollTask?.cancel()
         statusLineTask?.cancel()
         UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    /// The page the current band belongs to — what Mode A resumes at when
+    /// leaving Mode B (`ReaderModel.recordGlassesPageRead`'s counterpart for
+    /// navigation rather than sync; the iPhone rotation round-trip reads
+    /// this).
+    var currentPageIndex: Int {
+        bands.indices.contains(currentBandIndex) ? bands[currentBandIndex].pageIndex : 0
+    }
+
+    private func firstBandIndex(forPage pageIndex: Int) -> Int {
+        bands.firstIndex { $0.pageIndex == pageIndex } ?? 0
+    }
+
+    /// `(pageIndex, fraction)` where `fraction` is this band's position
+    /// among its page's own bands, 0 at the first and 1 at the last — the
+    /// geometry-independent coordinate `updateGeometry` preserves across a
+    /// recompute.
+    private func currentPosition() -> (pageIndex: Int, fraction: Double) {
+        guard bands.indices.contains(currentBandIndex) else { return (0, 0) }
+        let pageIndex = bands[currentBandIndex].pageIndex
+        let bandsForPage = bands.indices.filter { bands[$0].pageIndex == pageIndex }
+        guard let start = bandsForPage.first, bandsForPage.count > 1 else { return (pageIndex, 0) }
+        let fraction = Double(currentBandIndex - start) / Double(bandsForPage.count - 1)
+        return (pageIndex, fraction)
+    }
+
+    private func bandIndex(forPage pageIndex: Int, fraction: Double) -> Int {
+        let indices = bands.indices.filter { bands[$0].pageIndex == pageIndex }
+        guard let start = indices.first else { return min(currentBandIndex, bands.count - 1) }
+        guard indices.count > 1 else { return start }
+        return start + Int((fraction * Double(indices.count - 1)).rounded())
     }
 
     // MARK: - Navigation
@@ -295,12 +365,25 @@ final class GlassesCoordinator {
 
         Task { @MainActor [eventStream] in
             for await connected in eventStream {
-                isExternalDisplayConnected = connected
+                isGlassesAttached = connected
             }
         }
     }
 
     private static func hasExternalScreen() -> Bool {
         UIScreen.screens.count > 1
+    }
+
+    /// Called by `GlassesSceneDelegate.scene(_:willConnectTo:)` via
+    /// `AppDelegate`'s static handoff — the only signal that a real,
+    /// independent external surface exists rather than a mirror of the iPad
+    /// panel (gap 4, PLAN 6B §C).
+    func externalSceneDidConnect() {
+        isExternalSceneConnected = true
+    }
+
+    /// Called by `GlassesSceneDelegate.sceneDidDisconnect(_:)`.
+    func externalSceneDidDisconnect() {
+        isExternalSceneConnected = false
     }
 }

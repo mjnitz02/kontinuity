@@ -12,31 +12,31 @@ SCHEME         := Kontinuity
 UNIT_TARGET    := KontinuityTests
 UI_TARGET      := KontinuityUITests
 
-# Simulator destination. The iPad is the primary target — iPhone support comes
-# later (see .claude/PLAN.md phase 7), so the default sim is an iPad.
+# Simulator destination. The iPad is the primary target and the CI gate —
+# `test-ui`/`test-all` never point at anything else, even with 6B's iPhone
+# lane below (PLAN 6B §E).
 SIMULATOR_NAME ?= iPad Pro 11-inch (M5)
 # arch=arm64 pins the native slice so xcodebuild doesn't warn about matching
 # both the arm64 and x86_64/Rosetta slice of the same simulator.
 DESTINATION    ?= platform=iOS Simulator,name=$(SIMULATOR_NAME),arch=arm64
 
-# On-device deploy (free Apple ID). Apps signed by a free Personal Team stop
-# launching after 7 days, so re-run `make deploy` weekly with the iPad plugged
-# in (or paired over Wi-Fi). DEVICE_ID comes from `xcrun devicectl list devices`
-# — set it in Makefile.local (or `make deploy DEVICE_ID=...`).
+# The iPhone lane (PLAN 6B): compact-height Mode B only exists there, so it
+# needs its own destination — `test-ui-iphone` runs `ReaderIPhoneUITests`
+# against it. The iPad `DESTINATION` above is untouched and stays the default
+# for every other target.
+IPHONE_SIMULATOR_NAME ?= iPhone 17 Pro
+IPHONE_DESTINATION    ?= platform=iOS Simulator,name=$(IPHONE_SIMULATOR_NAME),arch=arm64
+
+# On-device deploy (paid Apple Developer Program membership). Profiles are good
+# for a year, so `make deploy` is only needed when you want new code on the
+# iPad — plugged in, or paired over Wi-Fi. DEVICE_ID comes from
+# `xcrun devicectl list devices` and is set in Makefile.local (or
+# `make deploy DEVICE_ID=...`).
 APP_NAME       ?= Kontinuity
 DEVICE_CONFIG  ?= Debug
 DEVICE_DERIVED ?= build/device
 DEVICE_ID      ?=
 DEVICE_APP     := $(DEVICE_DERIVED)/Build/Products/$(DEVICE_CONFIG)-iphoneos/$(APP_NAME).app
-
-# Free Personal Team provisioning profiles expire 7 days after they're *created*,
-# not after they're deployed. `-allowProvisioningUpdates` reuses a cached profile
-# while it's still valid, so a mid-week deploy re-signs with a profile whose clock
-# already started — the app dies 7 days after the FIRST deploy of the cycle. We
-# delete our cached profiles before each deploy so Xcode mints fresh ones with a
-# full 7-day window. Only profiles matching BUNDLE_PREFIX are touched.
-PROFILE_DIR    := $(HOME)/Library/Developer/Xcode/UserData/Provisioning Profiles
-BUNDLE_PREFIX  ?= org.mattnitzken.Kontinuity
 
 # Local Komga instance for testing (see ~/workspaces/komga-docker). Credentials
 # live in Makefile.local, never here — this file is committed. `komga-check`
@@ -94,19 +94,10 @@ build:
 		-project $(PROJECT) -scheme $(SCHEME) \
 		-destination '$(DESTINATION)' $(FORMATTER)
 
-## deploy: re-sign + install to the iPad over cable/Wi-Fi (weekly 7-day refresh)
+## deploy: build + install to the iPad over cable/Wi-Fi
 .PHONY: deploy
 deploy:
 	@test -n "$(DEVICE_ID)" || { echo "DEVICE_ID is unset. Set it in Makefile.local (copy Makefile.local.example) or pass DEVICE_ID=... — find it via 'xcrun devicectl list devices'."; exit 1; }
-	@echo "Purging cached provisioning profiles for $(BUNDLE_PREFIX) so a fresh 7-day profile is minted…"
-	@if [ -d "$(PROFILE_DIR)" ]; then \
-		for f in "$(PROFILE_DIR)"/*.mobileprovision; do \
-			[ -e "$$f" ] || continue; \
-			if security cms -D -i "$$f" 2>/dev/null | grep -q "$(BUNDLE_PREFIX)"; then \
-				rm -f "$$f" && echo "  removed $$(basename "$$f")"; \
-			fi; \
-		done; \
-	fi
 	set -o pipefail; $(XCODEBUILD) build \
 		-project $(PROJECT) -scheme $(SCHEME) \
 		-configuration $(DEVICE_CONFIG) \
@@ -114,7 +105,7 @@ deploy:
 		-allowProvisioningUpdates \
 		-derivedDataPath $(DEVICE_DERIVED) $(FORMATTER)
 	xcrun devicectl device install app --device $(DEVICE_ID) "$(DEVICE_APP)"
-	@echo "Installed $(APP_NAME) — good for ~7 days. Re-run \`make deploy\` to refresh."
+	@echo "Installed $(APP_NAME)."
 
 ## ipa: package an unsigned .ipa for SideStore/AltStore (which auto-refreshes)
 .PHONY: ipa
@@ -139,19 +130,32 @@ test-unit test:
 		-only-testing:$(UNIT_TARGET) $(FORMATTER)
 
 ## test-ui: run the XCUITest suite (slower — boots a simulator and drives the app)
+# ReaderIPhoneUITests is skipped here — compact-height Mode B auto-entry
+# (PLAN 6B §B) never triggers on the iPad, by design, so it can't pass on
+# this destination. `test-ui-iphone` is its lane.
 .PHONY: test-ui
 test-ui:
 	set -o pipefail; $(XCODEBUILD) test \
 		-project $(PROJECT) -scheme $(SCHEME) \
 		-destination '$(DESTINATION)' \
-		-only-testing:$(UI_TARGET) $(FORMATTER)
+		-only-testing:$(UI_TARGET) \
+		-skip-testing:$(UI_TARGET)/ReaderIPhoneUITests $(FORMATTER)
 
 ## test-all: run the unit and UI suites together
 .PHONY: test-all
 test-all:
 	set -o pipefail; $(XCODEBUILD) test \
 		-project $(PROJECT) -scheme $(SCHEME) \
-		-destination '$(DESTINATION)' $(FORMATTER)
+		-destination '$(DESTINATION)' \
+		-skip-testing:$(UI_TARGET)/ReaderIPhoneUITests $(FORMATTER)
+
+## test-ui-iphone: run the iPhone-only reader suite (PLAN 6B) against IPHONE_SIMULATOR_NAME
+.PHONY: test-ui-iphone
+test-ui-iphone:
+	set -o pipefail; $(XCODEBUILD) test \
+		-project $(PROJECT) -scheme $(SCHEME) \
+		-destination '$(IPHONE_DESTINATION)' \
+		-only-testing:$(UI_TARGET)/ReaderIPhoneUITests $(FORMATTER)
 
 ## komga-up: start the local Komga test instance (docker)
 .PHONY: komga-up

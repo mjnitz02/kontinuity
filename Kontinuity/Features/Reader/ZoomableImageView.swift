@@ -146,15 +146,19 @@ struct ZoomableImageView: UIViewRepresentable {
             scrollView.zoom(to: CGRect(origin: origin, size: size), animated: true)
         }
 
+        /// Quarters, not thirds (READER-DESIGN §1 supersedes §2): edge
+        /// quarters page, the centre half — a bigger, more forgiving target —
+        /// toggles chrome. The only change PLAN 6B §D makes to Mode A; the
+        /// swipe here is still the paging `TabView`, unchanged.
         @objc
         func handleSingleTap(_ recognizer: UITapGestureRecognizer) {
             guard let scrollView else { return }
             let x = recognizer.location(in: scrollView).x
             let width = scrollView.bounds.width
             switch x {
-            case ..<(width / 3):
+            case ..<(width / 4):
                 onTapZone?(.previous)
-            case (width * 2 / 3)...:
+            case (width * 3 / 4)...:
                 onTapZone?(.next)
             default:
                 onTapZone?(.toggleChrome)

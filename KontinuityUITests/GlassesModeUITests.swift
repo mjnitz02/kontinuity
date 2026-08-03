@@ -73,14 +73,52 @@ final class GlassesModeUITests: XCTestCase {
     }
 
     @MainActor
-    func testTappingTheRightThirdAdvancesTheBandInFallbackMode() {
+    func testTappingTheRightQuarterAdvancesTheBandInFallbackMode() {
         enterGlassesMode()
         let surface = app.find(AID.glassesSurface).assertAppears("The band layout surface")
 
         surface.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
 
         let label = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
-        XCTAssertTrue(label.label.hasPrefix("2 / "), "Tapping the right third should advance, got \(label.label)")
+        XCTAssertTrue(label.label.hasPrefix("2 / "), "Tapping the right quarter should advance, got \(label.label)")
+    }
+
+    /// `dx: 0.3` is inside the old thirds' right-of-centre paging zone but
+    /// inside quarters' centre half — a passing tap at `dx: 0.85` alone isn't
+    /// evidence the split actually changed, since that point is inside the
+    /// right zone either way (PLAN 6B §E).
+    @MainActor
+    func testTappingNearCentreTogglesChromeRatherThanPagingUnderQuarters() {
+        enterGlassesMode()
+        let surface = app.find(AID.glassesSurface).assertAppears("The band layout surface")
+        app.find(AID.glassesExit).assertAppears("Chrome visible on entry")
+
+        surface.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap()
+
+        XCTAssertFalse(
+            app.find(AID.glassesExit).exists,
+            "dx: 0.3 is inside quarters' centre half — it should toggle chrome, not page"
+        )
+    }
+
+    @MainActor
+    func testSwipeAdvancesAndRetreatsTheBandInFallbackMode() {
+        enterGlassesMode()
+        app.find(AID.glassesSurface).assertAppears("The band layout surface")
+
+        app.swipeLeft()
+        let afterSwipeLeft = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
+        XCTAssertTrue(
+            afterSwipeLeft.label.hasPrefix("2 / "),
+            "Swiping left should advance, got \(afterSwipeLeft.label)"
+        )
+
+        app.swipeRight()
+        let afterSwipeRight = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
+        XCTAssertTrue(
+            afterSwipeRight.label.hasPrefix("1 / "),
+            "Swiping right should retreat, got \(afterSwipeRight.label)"
+        )
     }
 
     @MainActor

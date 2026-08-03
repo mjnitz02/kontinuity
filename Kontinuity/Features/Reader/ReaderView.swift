@@ -18,6 +18,12 @@ struct ReaderView: View {
     let glasses: GlassesCoordinator
 
     @Environment(\.dismiss) private var dismiss
+    /// Compact height is true for iPhone landscape and false for every iPad
+    /// configuration, including Stage Manager and Split View — the
+    /// distinction PLAN 6B §B wants, and not one `UIDevice.orientation`
+    /// or raw aspect can make (a face-up iPad fires orientation
+    /// notifications despite never changing shape).
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var model: ReaderModel
     @State private var loader: PageImageLoader
     @State private var chromeVisible = true
@@ -45,7 +51,7 @@ struct ReaderView: View {
                 if glasses.isActive {
                     GlassesReaderView(
                         glasses: glasses,
-                        showsContent: !glasses.isExternalDisplayConnected,
+                        showsContent: !glasses.isExternalSceneConnected,
                         onExit: exitGlassesAndReader,
                         onNextBook: { Task { await advanceToNextBookForGlasses() } }
                     )
@@ -60,10 +66,45 @@ struct ReaderView: View {
         }
         .background(Color.black)
         .statusBar(hidden: true)
-        .task { await model.load() }
+        .task {
+            await model.load()
+            // Opening directly into landscape (book reached with the phone
+            // already turned sideways) needs the same auto-entry a rotation
+            // triggers — `onChange` alone only fires on a subsequent change.
+            if verticalSizeClass == .compact {
+                enterGlassesMode()
+            }
+        }
         // Retention/auto-remove must never delete the book currently open
         // (PLAN §6) — this is how the coordinator knows which one that is.
         .onAppear { downloads.openBookID = book.id }
+        // Mode B's progression entry point (READER-DESIGN §5, PLAN 6B §C gap
+        // 1): `GlassesCoordinator` must not learn about `ProgressionSyncEngine`
+        // (PLAN's constraint), so this — the input surface mounted in every
+        // Mode B configuration — is what maps a band reaching the last band
+        // of its page to `ReaderModel.recordGlassesPageRead`.
+        .onChange(of: glasses.isActive) { _, active in
+            if active {
+                handleGlassesBandChange(glasses.currentBandIndex)
+            }
+        }
+        .onChange(of: glasses.currentBandIndex) { _, newIndex in
+            guard glasses.isActive else { return }
+            handleGlassesBandChange(newIndex)
+        }
+        // iPhone reader mode selection (PLAN 6B §B): compact height is
+        // landscape on every iPhone and never true on an iPad, so this only
+        // ever fires there — the iPad's manual eyeglasses button is
+        // untouched. The round trip is position-preserving in both
+        // directions: entering at the page currently open, and leaving at
+        // the page the current band belongs to.
+        .onChange(of: verticalSizeClass) { _, newValue in
+            if newValue == .compact {
+                enterGlassesMode()
+            } else if glasses.isActive {
+                exitGlassesModeToMatchingPage()
+            }
+        }
         .onDisappear {
             glasses.exit()
             model.flushProgress()
@@ -123,15 +164,7 @@ struct ReaderView: View {
                         .accessibilityIdentifier(AID.readerPageLabel)
                 }
                 Spacer()
-                Button {
-                    glasses.enter(
-                        pageSources: model.pageSources,
-                        pageGeometries: model.pageGeometries,
-                        loader: loader,
-                        screenWidth: containerSize.width,
-                        screenHeight: containerSize.height
-                    )
-                } label: {
+                Button(action: enterGlassesMode) {
                     Image(systemName: "eyeglasses")
                 }
                 .accessibilityIdentifier(AID.readerGlassesModeButton)
@@ -189,6 +222,33 @@ struct ReaderView: View {
         dismiss()
     }
 
+    /// The iPad's manual button and the iPhone's auto-entry on rotation both
+    /// land here — same action, different trigger (PLAN 6B §B). Entering at
+    /// `currentLeadingPageIndex` rather than band 0 of the book is gap 2
+    /// (PLAN 6B §C): a rotation must not throw the reader back to page 1.
+    private func enterGlassesMode() {
+        glasses.enter(
+            pageSources: model.pageSources,
+            pageGeometries: model.pageGeometries,
+            loader: loader,
+            startingPageIndex: currentLeadingPageIndex,
+            screenSize: containerSize
+        )
+    }
+
+    /// Compact height going away — an iPhone rotating back to portrait —
+    /// leaves Mode B at the page its current band belongs to, resolved to
+    /// the `PageSpread` that contains it so Mode A resumes on the very same
+    /// page rather than snapping back to wherever the reader was before
+    /// rotating into landscape.
+    private func exitGlassesModeToMatchingPage() {
+        let resumePageIndex = glasses.currentPageIndex
+        glasses.exit()
+        guard let spreadIndex = model.spreads.firstIndex(where: { $0.pageIndices.contains(resumePageIndex) })
+        else { return }
+        model.currentSpreadIndex = spreadIndex
+    }
+
     /// Glasses mode's `N` binding — unlike `openNextBook`, this awaits the
     /// new model's load before recomputing bands, so glasses mode stays
     /// active across the volume boundary instead of showing stale/empty
@@ -207,9 +267,23 @@ struct ReaderView: View {
             pageSources: newModel.pageSources,
             pageGeometries: newModel.pageGeometries,
             loader: loader,
-            screenWidth: containerSize.width,
-            screenHeight: containerSize.height
+            startingPageIndex: 0,
+            screenSize: containerSize
         )
+    }
+
+    /// Maps a band index to "did this just reach the last band of its page"
+    /// and, if so, records progress for that page — READER-DESIGN §5: "a page
+    /// counts as read... when its **last** band is reached", not its first,
+    /// so a book skimmed in glasses mode doesn't report pages never actually
+    /// seen.
+    private func handleGlassesBandChange(_ index: Int) {
+        let bands = glasses.bands
+        guard bands.indices.contains(index) else { return }
+        let pageIndex = bands[index].pageIndex
+        let isLastBandOfPage = index + 1 >= bands.count || bands[index + 1].pageIndex != pageIndex
+        guard isLastBandOfPage else { return }
+        model.recordGlassesPageRead(pageIndex: pageIndex)
     }
 
     private var currentLeadingPageIndex: Int {

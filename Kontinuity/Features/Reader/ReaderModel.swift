@@ -166,15 +166,29 @@ final class ReaderModel {
     /// once and owns the debounced push from here (PLAN §5).
     private func sendProgress() {
         guard spreads.indices.contains(currentSpreadIndex),
-              let lastPageIndex = spreads[currentSpreadIndex].pageIndices.max(),
-              pageSources.indices.contains(lastPageIndex)
+              let lastPageIndex = spreads[currentSpreadIndex].pageIndices.max()
         else { return }
+        recordProgress(pageIndex: lastPageIndex)
+    }
 
-        let page = lastPageIndex + 1
+    /// Mode B's progression entry point (READER-DESIGN §5, PLAN 6B §C gap 1):
+    /// `ReaderView` calls this when `GlassesCoordinator.currentBandIndex`
+    /// reaches the **last** band of a page — bands don't correspond 1:1 with
+    /// `spreads`, so this bypasses `currentSpreadIndex` entirely rather than
+    /// trying to reverse-map a band into one. Shares `recordProgress` with
+    /// Mode A, so `lastSentPage` de-duplication covers both: re-entering a
+    /// page or stepping bands backward costs nothing extra.
+    func recordGlassesPageRead(pageIndex: Int) {
+        recordProgress(pageIndex: pageIndex)
+    }
+
+    private func recordProgress(pageIndex: Int) {
+        guard pageSources.indices.contains(pageIndex) else { return }
+        let page = pageIndex + 1
         guard lastSentPage != page else { return }
         lastSentPage = page
 
-        let locator = progressionLocator(forPageIndex: lastPageIndex, page: page)
+        let locator = progressionLocator(forPageIndex: pageIndex, page: page)
         sync.recordPageTurn(bookID: book.id, page: page, pageHref: locator.href, mediaType: locator.mediaType)
     }
 

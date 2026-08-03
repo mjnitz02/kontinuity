@@ -9,6 +9,7 @@
 //  suite so runs never bleed into each other or the real `.standard` domain.
 //
 
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Kontinuity
@@ -35,6 +36,7 @@ struct GlassesCoordinatorTests {
     private func enter(
         _ coordinator: GlassesCoordinator,
         pages: [PageGeometry],
+        startingPageIndex: Int = 0,
         screenWidth: Double,
         screenHeight: Double
     ) {
@@ -42,8 +44,8 @@ struct GlassesCoordinatorTests {
             pageSources: [],
             pageGeometries: pages,
             loader: PageImageLoader(service: StubKomgaService()),
-            screenWidth: screenWidth,
-            screenHeight: screenHeight
+            startingPageIndex: startingPageIndex,
+            screenSize: CGSize(width: screenWidth, height: screenHeight)
         )
     }
 
@@ -116,6 +118,52 @@ struct GlassesCoordinatorTests {
 
         coordinator.adjustAutoScrollSpeed(by: 10)
         #expect(coordinator.autoScrollSpeed == 5)
+    }
+
+    @Test("enter() starts at the given page's first band, not band 0 of the book")
+    func enterStartsAtTheGivenPagesFirstBand() {
+        let coordinator = makeCoordinator()
+        enter(coordinator, pages: [Self.tall, Self.tall], startingPageIndex: 1, screenWidth: 800, screenHeight: 800)
+        #expect(coordinator.currentBandIndex == 4) // first band of page 1 (4 bands/page)
+        #expect(coordinator.currentPageIndex == 1)
+    }
+
+    @Test("updateGeometry recomputes bands and preserves position as (page, fraction), not a raw band index")
+    func updateGeometryPreservesFractionalPosition() {
+        let coordinator = makeCoordinator()
+        // 800x800 screen -> 4 bands/page for `tall`. Land on the last band of
+        // page 1 (fraction 1.0 through that page's bands).
+        enter(coordinator, pages: [Self.tall, Self.tall], startingPageIndex: 1, screenWidth: 800, screenHeight: 800)
+        coordinator.advanceBand()
+        coordinator.advanceBand()
+        coordinator.advanceBand()
+        #expect(coordinator.currentPageIndex == 1)
+
+        // A taller screen halves the band count per page (2 instead of 4).
+        // A raw index (7) would land past the end; the fraction (1.0) must
+        // still resolve to page 1's *last* band under the new geometry.
+        coordinator.updateGeometry(width: 800, height: 1600)
+        #expect(coordinator.currentPageIndex == 1)
+        #expect(coordinator.currentBandIndex == coordinator.bands.count - 1)
+    }
+
+    @Test("updateGeometry before enter() is a no-op rather than crashing on empty bands")
+    func updateGeometryBeforeEnterIsANoOp() {
+        let coordinator = makeCoordinator()
+        coordinator.updateGeometry(width: 800, height: 800)
+        #expect(coordinator.bands.isEmpty)
+    }
+
+    @Test("isExternalSceneConnected starts false and only the dedicated hooks change it")
+    func externalSceneConnectionIsASeparateSignalFromGlassesAttached() {
+        let coordinator = makeCoordinator()
+        #expect(!coordinator.isExternalSceneConnected)
+
+        coordinator.externalSceneDidConnect()
+        #expect(coordinator.isExternalSceneConnected)
+
+        coordinator.externalSceneDidDisconnect()
+        #expect(!coordinator.isExternalSceneConnected)
     }
 
     @Test("any navigation keypress pauses auto-scroll, but toggling/adjusting it does not self-interrupt")
