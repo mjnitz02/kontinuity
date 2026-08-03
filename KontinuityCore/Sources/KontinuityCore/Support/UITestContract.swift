@@ -144,6 +144,10 @@ public enum AID {
     public static let glassesSurface = "glasses.surface"
     public static let glassesStatusLabel = "glasses.statusLabel"
     public static let glassesExit = "glasses.exit"
+    /// Shown on black while the next page decodes — the page-transition
+    /// indicator, and the only thing on screen during a boundary the reader
+    /// hasn't prefetched through.
+    public static let glassesPageSpinner = "glasses.pageSpinner"
 
     /// Chrome reached by the centre-half tap (PLAN 6B §C/§D, READER-DESIGN
     /// §3's iPhone section) — the touch-reachable equivalents for the

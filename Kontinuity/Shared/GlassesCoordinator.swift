@@ -36,7 +36,13 @@ final class GlassesCoordinator {
     private let settings: GlassesSettings
 
     private(set) var bands: [Band] = []
-    var currentBandIndex = 0
+    /// `didSet` rather than a setter method so every path that moves the
+    /// reader — the nav methods below, auto-scroll's tick, `enter()`,
+    /// `updateGeometry` — warms and trims the image cache identically.
+    var currentBandIndex = 0 {
+        didSet { prepareImagesForCurrentPage() }
+    }
+
     private(set) var isActive = false
 
     /// The single source of truth both render targets read from — the
@@ -149,6 +155,9 @@ final class GlassesCoordinator {
             screenHeight: screenSize.height,
             overlap: settings.bandOverlap
         )
+        // Cleared before the assignment below so `prepareImagesForCurrentPage`
+        // doesn't mistake a new book's page 0 for the outgoing book's.
+        lastPreparedPageIndex = nil
         currentBandIndex = firstBandIndex(forPage: startingPageIndex)
         touchArmed = false
         isActive = true
@@ -256,6 +265,33 @@ final class GlassesCoordinator {
             start -= 1
         }
         return start
+    }
+
+    // MARK: - Page images
+
+    /// The page `prepareImagesForCurrentPage` last warmed around, so stepping
+    /// bands *within* a page — the common case by far — doesn't re-issue the
+    /// same prefetch and prune on every keypress.
+    private var lastPreparedPageIndex: Int?
+
+    /// Mode A prunes on every spread change (`ReaderView`); Mode B had no
+    /// equivalent, so a long volume read in glasses mode grew the decoded-page
+    /// cache until `NSCache` started purging under pressure — including the
+    /// page being read, which then re-decoded on the next band step. This is
+    /// Mode B's counterpart, plus the prefetch that makes a page boundary land
+    /// on an image that's already decoded.
+    private func prepareImagesForCurrentPage() {
+        guard let loader, bands.indices.contains(currentBandIndex) else { return }
+        let pageIndex = bands[currentBandIndex].pageIndex
+        guard pageIndex != lastPreparedPageIndex else { return }
+        lastPreparedPageIndex = pageIndex
+
+        // Prune first: it cancels in-flight work outside the ring, and the
+        // neighbours prefetched below sit inside it.
+        loader.prune(around: pageIndex)
+        for neighbour in [pageIndex + 1, pageIndex - 1] where pageSources.indices.contains(neighbour) {
+            loader.prefetch(page: neighbour, source: pageSources[neighbour])
+        }
     }
 
     // MARK: - Controls

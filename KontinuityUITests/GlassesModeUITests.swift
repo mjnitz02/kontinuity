@@ -63,6 +63,30 @@ final class GlassesModeUITests: XCTestCase {
         )
     }
 
+    /// Space is the binding most used in practice (one thumb, eyes closed),
+    /// and it shares the arrow keys' delivery path — both are keys iPadOS
+    /// claims for itself unless `wantsPriorityOverSystemBehavior` says
+    /// otherwise, which is why paging by keyboard looked half-broken on
+    /// device while `T`, `A` and Esc all worked.
+    @MainActor
+    func testSpaceAdvancesAndShiftSpaceRetreatsTheBandIndex() {
+        enterGlassesMode()
+
+        app.typeKey(XCUIKeyboardKey.space.rawValue, modifierFlags: [])
+        let afterAdvance = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
+        XCTAssertTrue(
+            afterAdvance.label.hasPrefix("2 / "),
+            "Space should advance to band 2, got \(afterAdvance.label)"
+        )
+
+        app.typeKey(XCUIKeyboardKey.space.rawValue, modifierFlags: .shift)
+        let afterRetreat = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
+        XCTAssertTrue(
+            afterRetreat.label.hasPrefix("1 / "),
+            "Shift-space should retreat back to band 1, got \(afterRetreat.label)"
+        )
+    }
+
     @MainActor
     func testEscExitsGlassesModeAndTheReader() {
         enterGlassesMode()

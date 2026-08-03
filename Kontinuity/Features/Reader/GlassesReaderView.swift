@@ -14,6 +14,8 @@
 //  Both route through this one view because the external `UIWindowScene` can
 //  never be key (PLAN phase 6's one architectural finding) — the Magic
 //  Keyboard's events always land on the iPad's own window, which this is.
+//  The keys themselves arrive through `GlassesKeyCommandCatcher` rather than
+//  SwiftUI's `onKeyPress`; see that file for why.
 //  Content only ever renders here when `showsContent` is true; when it's
 //  false, this iPad-side surface is a pure input source and the actual pixels
 //  are drawn by `GlassesSceneDelegate`'s external `UIHostingController`,
@@ -29,7 +31,6 @@ struct GlassesReaderView: View {
     let onExit: () -> Void
     let onNextBook: () -> Void
 
-    @FocusState private var isFocused: Bool
     /// Toggled by the centre-half tap, mirroring Mode A's `chromeVisible`
     /// (READER-DESIGN §1's "one control model") — visible on entry, same as
     /// `ReaderView`'s own default.
@@ -53,6 +54,10 @@ struct GlassesReaderView: View {
                     tapZones
                 }
 
+                GlassesKeyCommandCatcher(onKey: handle)
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+
                 if glasses.isStatusLineVisible {
                     statusLine
                 }
@@ -72,11 +77,6 @@ struct GlassesReaderView: View {
             }
         }
         .ignoresSafeArea()
-        .focusable()
-        .focusEffectDisabled()
-        .focused($isFocused)
-        .onAppear { isFocused = true }
-        .onKeyPress(action: handleKeyPress)
     }
 
     private var currentBand: Band? {
@@ -221,51 +221,34 @@ struct GlassesReaderView: View {
         !glasses.bands.isEmpty && glasses.currentBandIndex == glasses.bands.count - 1
     }
 
-    private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
-        switch press.key {
-        case .space:
-            if press.modifiers.contains(.shift) {
-                glasses.retreatBand()
-            } else {
-                glasses.advanceBand()
-            }
-            return .handled
-        case .rightArrow, .downArrow:
-            glasses.advanceBand()
-            return .handled
-        case .leftArrow, .upArrow:
-            glasses.retreatBand()
-            return .handled
-        case .pageDown:
-            glasses.nextPage()
-            return .handled
-        case .pageUp:
-            glasses.previousPage()
-            return .handled
-        case .escape:
-            onExit()
-            return .handled
-        default:
-            return handleCharacterKeyPress(press)
+    /// Intent to action. Which hardware keys produce which intent lives in
+    /// `GlassesKeyCommands`, so this stays a plain table of what Mode B does.
+    /// Split along `GlassesCoordinator`'s own Navigation/Controls seam —
+    /// moving the reader versus changing how it renders.
+    private func handle(_ key: GlassesKey) {
+        switch key {
+        case .advanceBand: glasses.advanceBand()
+        case .retreatBand: glasses.retreatBand()
+        case .nextPage: glasses.nextPage()
+        case .previousPage: glasses.previousPage()
+        case .exit: onExit()
+        case .nextBook: onNextBook()
+        case .dimDecrease, .dimIncrease, .toggleAutoScroll,
+             .autoScrollSlower, .autoScrollFaster, .toggleTouch:
+            handleControl(key)
         }
     }
 
-    /// N/P are the only bindings this doesn't fully implement: `N` reuses
-    /// `ReaderModel`'s existing next-volume lookup, but there's no
-    /// "previous volume" fetch anywhere in the app yet (Mode A never needed
-    /// one either) — `P` is accepted and silently ignored rather than faking
-    /// it, a known gap rather than a hidden bug.
-    private func handleCharacterKeyPress(_ press: KeyPress) -> KeyPress.Result {
-        switch press.characters.lowercased() {
-        case "[": glasses.adjustDim(by: -0.1)
-        case "]": glasses.adjustDim(by: 0.1)
-        case "a": glasses.toggleAutoScroll()
-        case "-": glasses.adjustAutoScrollSpeed(by: -0.25)
-        case "=": glasses.adjustAutoScrollSpeed(by: 0.25)
-        case "t": glasses.toggleTouch()
-        case "n": onNextBook()
-        default: return .ignored
+    private func handleControl(_ key: GlassesKey) {
+        switch key {
+        case .dimDecrease: glasses.adjustDim(by: -0.1)
+        case .dimIncrease: glasses.adjustDim(by: 0.1)
+        case .toggleAutoScroll: glasses.toggleAutoScroll()
+        case .autoScrollSlower: glasses.adjustAutoScrollSpeed(by: -0.25)
+        case .autoScrollFaster: glasses.adjustAutoScrollSpeed(by: 0.25)
+        case .toggleTouch: glasses.toggleTouch()
+        case .advanceBand, .retreatBand, .nextPage, .previousPage, .exit, .nextBook:
+            break
         }
-        return .handled
     }
 }
