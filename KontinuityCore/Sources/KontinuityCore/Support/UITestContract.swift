@@ -111,6 +111,7 @@ public enum AID {
     public static let seriesDetailTitle = "seriesDetail.title"
     public static let seriesDetailSummary = "seriesDetail.summary"
     public static let seriesBookList = "seriesDetail.books"
+    public static let seriesSortOrder = "seriesDetail.sortOrder"
 
     public static func bookRow(_ id: String) -> String {
         "book.row.\(id)"

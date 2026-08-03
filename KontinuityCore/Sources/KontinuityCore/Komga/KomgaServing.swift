@@ -178,17 +178,22 @@ public struct BookQuery: Sendable, Hashable {
     /// Only meaningful for the library-wide feeds; ignored when listing a
     /// series' books, which are already scoped.
     public var libraryID: String?
+    /// Only meaningful when listing a series' books, which are always ordered
+    /// by `metadata.numberSort`. `false` reverses it, newest chapter first.
+    public var ascending: Bool
     public var page: Int
     public var size: Int
 
     public init(
         readStatus: [KomgaReadStatus] = [],
         libraryID: String? = nil,
+        ascending: Bool = true,
         page: Int = 0,
         size: Int = 100
     ) {
         self.readStatus = readStatus
         self.libraryID = libraryID
+        self.ascending = ascending
         self.page = page
         self.size = size
     }

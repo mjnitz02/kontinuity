@@ -204,6 +204,27 @@ final class BrowseUITests: XCTestCase {
     }
 
     @MainActor
+    func testSeriesDetailSortOrderButtonReversesTheBookList() {
+        app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Windrunner's cell").tap()
+        app.find(AID.seriesBookList).assertAppears("The book list")
+
+        let firstBook = app.find(AID.bookRow(UITestFixture.readBookID)).assertAppears("Vol. 1")
+        let lastBook = app.find(AID.bookRow(UITestFixture.unreadBookID)).assertAppears("Vol. 3")
+        XCTAssertLessThan(
+            firstBook.frame.minY, lastBook.frame.minY,
+            "Reading order should list Vol. 1 above Vol. 3."
+        )
+
+        app.find(AID.seriesSortOrder).assertAppears("The sort order button").tap()
+
+        XCTAssertLessThan(
+            app.find(AID.bookRow(UITestFixture.unreadBookID)).frame.minY,
+            app.find(AID.bookRow(UITestFixture.readBookID)).frame.minY,
+            "Newest-first should list Vol. 3 above Vol. 1 after toggling."
+        )
+    }
+
+    @MainActor
     func testBookDetailOpensFromASeries() {
         app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Windrunner's cell").tap()
         app.find(AID.bookRow(UITestFixture.unreadBookID)).assertAppears("The unread book row").tap()

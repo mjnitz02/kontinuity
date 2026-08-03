@@ -54,12 +54,15 @@ struct SeriesGridView: View {
         .searchable(text: $searchText, prompt: "Search series")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Picker("Sort", selection: $sort) {
-                    ForEach(SeriesSort.allCases, id: \.self) { option in
-                        Text(option.label).tag(option)
+                Menu {
+                    Picker("Sort", selection: $sort) {
+                        ForEach(SeriesSort.allCases, id: \.self) { option in
+                            Text(option.label).tag(option)
+                        }
                     }
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
-                .pickerStyle(.menu)
                 // Sorting is server-side, so it's meaningless while a search is
                 // running — Komga orders those by relevance instead.
                 .disabled(!searchText.trimmed.isEmpty)

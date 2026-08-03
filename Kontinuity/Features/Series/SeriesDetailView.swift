@@ -20,6 +20,9 @@ struct SeriesDetailView: View {
     /// stale on. Falls back to the passed-in series until it lands.
     @State private var refreshed: KomgaSeries?
     @State private var isEnqueuingDownloads = false
+    /// Reading order (1, 2, 3…) vs. newest-first. Server-side, since the feed
+    /// is paged and only some books may be loaded.
+    @State private var ascending = true
     @Query private var bookRows: [Book]
 
     private var current: KomgaSeries {
@@ -38,12 +41,13 @@ struct SeriesDetailView: View {
         .navigationTitle(current.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await reload() }
-        .task(id: series.id) {
+        .task(id: FeedQuery(seriesID: series.id, ascending: ascending)) {
             let service = session.service
             let sync = session.sync
             let id = series.id
+            let order = ascending
             feed.start { page in
-                try await service.books(inSeries: id, matching: BookQuery(page: page))
+                try await service.books(inSeries: id, matching: BookQuery(ascending: order, page: page))
             }
             didReplace: { books in
                 books.forEach { sync.reconcile(with: $0) }
@@ -155,8 +159,12 @@ struct SeriesDetailView: View {
 
     private var books: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Books")
-                .font(.title3.bold())
+            HStack {
+                Text("Books")
+                    .font(.title3.bold())
+                Spacer()
+                sortOrderButton
+            }
 
             if feed.phase == .loading {
                 ProgressView().frame(maxWidth: .infinity)
@@ -189,6 +197,20 @@ struct SeriesDetailView: View {
                 }
             }
         }
+    }
+
+    private var sortOrderButton: some View {
+        Button {
+            ascending.toggle()
+        } label: {
+            Label(
+                ascending ? "Reading order" : "Newest first",
+                systemImage: ascending ? "arrow.up" : "arrow.down"
+            )
+            .labelStyle(.iconOnly)
+            .contentTransition(.symbolEffect(.replace))
+        }
+        .accessibilityIdentifier(AID.seriesSortOrder)
     }
 
     private func reload() async {
@@ -240,6 +262,13 @@ struct SeriesDetailView: View {
 
     private var summary: String {
         current.metadata.summary.isEmpty ? current.booksMetadata.summary : current.metadata.summary
+    }
+
+    /// What should cause the book feed to restart, bundled so `.task(id:)`
+    /// watches both without two modifiers racing each other.
+    private struct FeedQuery: Hashable {
+        let seriesID: String
+        let ascending: Bool
     }
 }
 

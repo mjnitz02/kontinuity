@@ -75,7 +75,11 @@
                 let wanted = Set(query.readStatus)
                 matches = matches.filter { wanted.contains($0.status) }
             }
-            matches.sort { $0.metadata.numberSort < $1.metadata.numberSort }
+            matches.sort {
+                query.ascending
+                    ? $0.metadata.numberSort < $1.metadata.numberSort
+                    : $0.metadata.numberSort > $1.metadata.numberSort
+            }
             return Self.page(matches, page: query.page, size: query.size)
         }
 

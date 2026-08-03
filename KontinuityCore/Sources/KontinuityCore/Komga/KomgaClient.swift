@@ -96,7 +96,7 @@ public struct KomgaClient: KomgaServing {
         var items = [
             URLQueryItem(name: "page", value: String(query.page)),
             URLQueryItem(name: "size", value: String(query.size)),
-            URLQueryItem(name: "sort", value: "metadata.numberSort,asc")
+            URLQueryItem(name: "sort", value: "metadata.numberSort,\(query.ascending ? "asc" : "desc")")
         ]
         items += query.readStatus.map { URLQueryItem(name: "read_status", value: $0.rawValue) }
         return try await get("/api/v1/series/\(seriesID)/books", query: items)
