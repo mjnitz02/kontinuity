@@ -19,6 +19,8 @@ struct SeriesGridView: View {
     @State private var feed = PagedFeed<KomgaSeries>()
     @State private var searchText = ""
     @State private var sort: SeriesSort = .title
+    /// Nil shows every series regardless of read state.
+    @State private var readFilter: KomgaReadStatus?
 
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 16)]
 
@@ -55,6 +57,23 @@ struct SeriesGridView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
+                    Picker("Read status", selection: $readFilter) {
+                        Text("All").tag(KomgaReadStatus?.none)
+                        ForEach(KomgaReadStatus.allCases, id: \.self) { status in
+                            Text(status.label).tag(KomgaReadStatus?.some(status))
+                        }
+                    }
+                } label: {
+                    Label(
+                        "Filter",
+                        systemImage: readFilter == nil
+                            ? "line.3.horizontal.decrease.circle"
+                            : "line.3.horizontal.decrease.circle.fill"
+                    )
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
                     Picker("Sort", selection: $sort) {
                         ForEach(SeriesSort.allCases, id: \.self) { option in
                             Text(option.label).tag(option)
@@ -69,9 +88,9 @@ struct SeriesGridView: View {
             }
         }
         .refreshable { await feed.refresh() }
-        // Re-runs on any of the three, and the 250ms only bites for search:
+        // Re-runs on any of the four, and the 250ms only bites for search:
         // typing "air gear" would otherwise be eight round trips.
-        .task(id: Query(libraryID: libraryID, search: searchText.trimmed, sort: sort)) {
+        .task(id: Query(libraryID: libraryID, search: searchText.trimmed, readFilter: readFilter, sort: sort)) {
             if !searchText.trimmed.isEmpty {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled else { return }
@@ -79,12 +98,14 @@ struct SeriesGridView: View {
             let service = session.service
             let library = libraryID
             let term = searchText.trimmed
+            let filter = readFilter
             let order = sort
             feed.start { page in
                 try await service.series(
                     matching: SeriesQuery(
                         libraryID: library,
                         searchTerm: term.isEmpty ? nil : term,
+                        readStatus: filter.map { [$0] } ?? [],
                         sort: order,
                         page: page
                     )
@@ -114,24 +135,34 @@ struct SeriesGridView: View {
             }
             .accessibilityIdentifier(AID.browseError)
         } else if feed.isEmpty {
+            let term = searchText.trimmed
             ContentUnavailableView(
-                searchText.trimmed.isEmpty ? "No series" : "No matches",
-                systemImage: searchText.trimmed.isEmpty ? "books.vertical" : "magnifyingglass",
-                description: Text(
-                    searchText.trimmed.isEmpty
-                        ? "This library has nothing in it yet, or Komga is still scanning."
-                        : "Nothing here matches “\(searchText.trimmed)”."
-                )
+                term.isEmpty && readFilter == nil ? "No series" : "No matches",
+                systemImage: !term.isEmpty
+                    ? "magnifyingglass"
+                    : (readFilter == nil ? "books.vertical" : "line.3.horizontal.decrease.circle"),
+                description: Text(emptyDescription(term: term))
             )
             .accessibilityIdentifier(AID.browseEmpty)
         }
     }
 
+    private func emptyDescription(term: String) -> String {
+        if !term.isEmpty {
+            return "Nothing here matches “\(term)”."
+        }
+        if let readFilter {
+            return "No series in this library are \(readFilter.label.lowercased())."
+        }
+        return "This library has nothing in it yet, or Komga is still scanning."
+    }
+
     /// The inputs that should cause a reload, bundled so `.task(id:)` watches
-    /// all three without three separate modifiers racing each other.
+    /// all four without four separate modifiers racing each other.
     private struct Query: Hashable {
         let libraryID: String?
         let search: String
+        let readFilter: KomgaReadStatus?
         let sort: SeriesSort
     }
 }

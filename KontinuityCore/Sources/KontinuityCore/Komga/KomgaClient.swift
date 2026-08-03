@@ -76,6 +76,7 @@ public struct KomgaClient: KomgaServing {
         if let oneshot = query.oneshot {
             items.append(URLQueryItem(name: "oneshot", value: String(oneshot)))
         }
+        items += query.readStatus.map { URLQueryItem(name: "read_status", value: $0.rawValue) }
         let search = query.searchTerm?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if search.isEmpty {
             items.append(URLQueryItem(name: "sort", value: query.sort.rawValue))

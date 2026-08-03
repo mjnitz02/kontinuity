@@ -58,6 +58,10 @@
             if let oneshot = query.oneshot {
                 matches = matches.filter { $0.oneshot == oneshot }
             }
+            if !query.readStatus.isEmpty {
+                let wanted = Set(query.readStatus)
+                matches = matches.filter { wanted.contains($0.readStatus) }
+            }
             matches.sort { $0.metadata.titleSort.localizedCompare($1.metadata.titleSort) == .orderedAscending }
             return Self.page(matches, page: query.page, size: query.size)
         }
@@ -207,6 +211,17 @@
             case .inProgress: .inProgress
             case .read: .read
             }
+        }
+    }
+
+    private extension KomgaSeries {
+        /// Mirrors `SeriesSearchHelper.kt`'s `SearchCondition.ReadStatus`: READ
+        /// when every book is, UNREAD when none have been touched, IN_PROGRESS
+        /// for everything in between.
+        var readStatus: KomgaReadStatus {
+            if isFullyRead { return .read }
+            if booksReadCount == 0 && booksInProgressCount == 0 { return .unread }
+            return .inProgress
         }
     }
 

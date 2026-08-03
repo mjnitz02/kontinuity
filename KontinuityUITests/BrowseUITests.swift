@@ -84,6 +84,24 @@ final class BrowseUITests: XCTestCase {
     }
 
     @MainActor
+    func testReadStatusFilterNarrowsTheGrid() {
+        app.find(AID.seriesCell(UITestFixture.finishedSeriesID)).assertAppears("Neon Requiem's cell")
+
+        app.buttons["Filter"].assertAppears("The filter menu").tap()
+        app.buttons["Read"].assertAppears("The Read option").tap()
+
+        app.find(AID.seriesCell(UITestFixture.finishedSeriesID)).assertAppears("Neon Requiem stays — it's fully read")
+        XCTAssertTrue(
+            app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).waitForNonExistence(timeout: 5),
+            "Windrunner has unread books, so it should drop out of the Read filter."
+        )
+        XCTAssertTrue(
+            app.find(AID.seriesCell(UITestFixture.comicsSeriesID)).waitForNonExistence(timeout: 5),
+            "Halcyon Drift is entirely unread, so it should drop out of the Read filter."
+        )
+    }
+
+    @MainActor
     func testEmptySearchShowsTheNoMatchesState() {
         let field = app.searchFields.firstMatch.assertAppears("The search field")
         field.tap()

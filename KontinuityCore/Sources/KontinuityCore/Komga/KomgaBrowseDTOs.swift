@@ -372,6 +372,14 @@ public enum KomgaReadStatus: String, Sendable, Hashable, CaseIterable {
     case unread = "UNREAD"
     case inProgress = "IN_PROGRESS"
     case read = "READ"
+
+    public var label: String {
+        switch self {
+        case .unread: "Unread"
+        case .inProgress: "In progress"
+        case .read: "Read"
+        }
+    }
 }
 
 // MARK: - Dates

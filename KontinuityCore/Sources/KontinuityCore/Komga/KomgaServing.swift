@@ -130,6 +130,10 @@ public struct SeriesQuery: Sendable, Hashable {
     /// Nil includes both; Komga's own series feeds pass `false`, which is why
     /// oneshots are invisible in most clients (KOMGA-API §6).
     public var oneshot: Bool?
+    /// Empty means no filter. Komga ORs multiple values together, and evaluates
+    /// each series as a whole — READ means every book is, UNREAD means none are,
+    /// IN_PROGRESS is everything in between (`SeriesSearchHelper.kt`).
+    public var readStatus: [KomgaReadStatus]
     public var sort: SeriesSort
     public var page: Int
     public var size: Int
@@ -138,6 +142,7 @@ public struct SeriesQuery: Sendable, Hashable {
         libraryID: String? = nil,
         searchTerm: String? = nil,
         oneshot: Bool? = nil,
+        readStatus: [KomgaReadStatus] = [],
         sort: SeriesSort = .title,
         page: Int = 0,
         size: Int = 60
@@ -145,6 +150,7 @@ public struct SeriesQuery: Sendable, Hashable {
         self.libraryID = libraryID
         self.searchTerm = searchTerm
         self.oneshot = oneshot
+        self.readStatus = readStatus
         self.sort = sort
         self.page = page
         self.size = size

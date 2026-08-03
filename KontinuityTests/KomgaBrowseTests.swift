@@ -288,6 +288,15 @@ struct KomgaBrowseTests {
         #expect(query["sort"] == ["metadata.titleSort,asc"])
     }
 
+    @Test("the series read-status filter is sent, repeated rather than comma-joined")
+    func seriesReadStatusFilter() async throws {
+        let (client, transport) = try makeClient([.json(Self.seriesPageJSON)])
+        _ = try await client.series(matching: SeriesQuery(readStatus: [.unread, .inProgress]))
+
+        let query = try queryValues(#require(transport.requests.first))
+        #expect(query["read_status"] == ["UNREAD", "IN_PROGRESS"])
+    }
+
     @Test("a series' books are requested in reading order")
     func booksSortedByNumber() async throws {
         let (
