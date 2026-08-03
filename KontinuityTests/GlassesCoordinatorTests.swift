@@ -89,17 +89,6 @@ struct GlassesCoordinatorTests {
         #expect(coordinator.currentBandIndex == 1)
     }
 
-    @Test("touchArmed re-arms to false on every enter(), even if it was toggled on")
-    func touchArmedResetsOnEveryEnter() {
-        let coordinator = makeCoordinator()
-        enter(coordinator, pages: [Self.portrait], screenWidth: 800, screenHeight: 1200)
-        coordinator.toggleTouch()
-        #expect(coordinator.touchArmed)
-
-        enter(coordinator, pages: [Self.portrait], screenWidth: 800, screenHeight: 1200)
-        #expect(!coordinator.touchArmed)
-    }
-
     @Test("adjustDim clamps to 0...1")
     func dimLevelClamps() {
         let coordinator = makeCoordinator()

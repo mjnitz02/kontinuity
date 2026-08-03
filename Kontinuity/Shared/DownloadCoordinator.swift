@@ -49,11 +49,16 @@ final class DownloadCoordinator: NSObject {
     /// the cap (PLAN §6: pause and say so, don't thrash).
     private(set) var retentionWarning: String?
 
+    /// `settings` has no default here: a default argument expression runs in
+    /// a nonisolated context regardless of this initializer's own isolation,
+    /// so `DownloadSettings()` — main-actor-isolated under this project's
+    /// default actor isolation — can't be constructed as one. Every real call
+    /// site already threads its own instance.
     init(
         service: any KomgaServing,
         modelContext: ModelContext,
         store: LocalBookStore = LocalBookStore(),
-        settings: DownloadSettings = DownloadSettings(),
+        settings: DownloadSettings,
         sessionConfiguration: URLSessionConfiguration
     ) {
         self.service = service

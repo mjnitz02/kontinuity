@@ -12,11 +12,8 @@
 //  (`app.typeKey`) — nothing here confirms the pattern works before this file.
 //
 //  Touch in the fallback path is always live ("no blanket, nowhere else to
-//  look" — READER-DESIGN §3), unlike the real external-display case where
-//  `touchArmed` actually gates it, so this suite verifies touch works and
-//  that `T` toggles the `touchArmed` flag (visible in the status label),
-//  rather than a "touch does nothing until T" assertion that only applies
-//  off the fallback path.
+//  look" — READER-DESIGN §3); this suite verifies it works via tap and
+//  swipe.
 //
 
 import KontinuityCore
@@ -143,19 +140,6 @@ final class GlassesModeUITests: XCTestCase {
             afterSwipeRight.label.hasPrefix("1 / "),
             "Swiping right should retreat, got \(afterSwipeRight.label)"
         )
-    }
-
-    @MainActor
-    func testTKeyTogglesTheTouchArmedFlag() {
-        enterGlassesMode()
-
-        app.typeKey("t", modifierFlags: [])
-        var label = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
-        XCTAssertTrue(label.label.contains("touch"), "T should arm touch, got \(label.label)")
-
-        app.typeKey("t", modifierFlags: [])
-        label = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
-        XCTAssertFalse(label.label.contains("touch"), "A second T should disarm touch, got \(label.label)")
     }
 
     @MainActor

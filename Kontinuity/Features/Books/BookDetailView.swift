@@ -73,10 +73,11 @@ struct BookDetailView: View {
                 .font(.title2.bold())
                 .accessibilityIdentifier(AID.bookDetailTitle)
 
+            // Also a link, not just context: arriving here from Keep Reading or
+            // On Deck, this is the only thing on screen that knows where the
+            // rest of the series is.
             if !current.seriesTitle.isEmpty {
-                Text(current.seriesTitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                SeriesLink(book: current)
             }
 
             ReadStateLabel(state: current.readState)

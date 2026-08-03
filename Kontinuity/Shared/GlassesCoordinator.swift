@@ -61,9 +61,9 @@ final class GlassesCoordinator {
     /// "Are glasses attached?" (READER-DESIGN §3's two-signals table) —
     /// bridged from `UIScreen.didConnectNotification`/
     /// `didDisconnectNotification` below. A fine trigger for offering or
-    /// auto-entering the mode; **not** what gates touch or the panel
-    /// blackout — mirroring makes this true while `isExternalSceneConnected`
-    /// stays false, which is exactly the case a screen count alone can't
+    /// auto-entering the mode; **not** what gates the panel blackout —
+    /// mirroring makes this true while `isExternalSceneConnected` stays
+    /// false, which is exactly the case a screen count alone can't
     /// distinguish.
     private(set) var isGlassesAttached: Bool
 
@@ -73,13 +73,8 @@ final class GlassesCoordinator {
     /// only signal that means "there is a real, independent
     /// `…RoleExternalDisplayNonInteractive` scene" — under mirroring the
     /// panel *is* the thing the glasses show, so only this flag may black it
-    /// out or gate touch (READER-DESIGN §3).
+    /// out (READER-DESIGN §3).
     private(set) var isExternalSceneConnected = false
-
-    /// Off by default, and re-armed to `false` every `enter()` — "a blanket
-    /// resting on a capacitive screen will page through the entire volume"
-    /// (READER-DESIGN §3) is what this guards against.
-    private(set) var touchArmed = false
 
     var dimLevel: Double {
         didSet { settings.dimLevel = dimLevel }
@@ -111,7 +106,12 @@ final class GlassesCoordinator {
     @ObservationIgnored
     private nonisolated(unsafe) var screenObservers: [NSObjectProtocol] = []
 
-    init(settings: GlassesSettings = GlassesSettings()) {
+    /// No default: a default argument expression runs in a nonisolated
+    /// context regardless of this initializer's own isolation, so
+    /// `GlassesSettings()` — main-actor-isolated under this project's default
+    /// actor isolation — can't be constructed as one. The one real call site
+    /// threads its own instance.
+    init(settings: GlassesSettings) {
         self.settings = settings
         dimLevel = settings.dimLevel
         autoScrollSpeed = settings.autoScrollSpeed
@@ -159,7 +159,6 @@ final class GlassesCoordinator {
         // doesn't mistake a new book's page 0 for the outgoing book's.
         lastPreparedPageIndex = nil
         currentBandIndex = firstBandIndex(forPage: startingPageIndex)
-        touchArmed = false
         isActive = true
         UIApplication.shared.isIdleTimerDisabled = true
     }
@@ -295,11 +294,6 @@ final class GlassesCoordinator {
     }
 
     // MARK: - Controls
-
-    func toggleTouch() {
-        touchArmed.toggle()
-        interrupt()
-    }
 
     func adjustDim(by delta: Double) {
         dimLevel = min(1, max(0, dimLevel + delta))

@@ -28,11 +28,16 @@ final class KomgaSession {
     private(set) var libraries: [KomgaLibrary] = []
     private(set) var librariesError: String?
 
+    /// No default on `downloadSessionConfiguration`: a default argument
+    /// expression runs in a nonisolated context regardless of this
+    /// initializer's own isolation, so `DownloadSessionProvider.live` — main-
+    /// actor-isolated under this project's default actor isolation — can't be
+    /// read as one. `RootView` already threads its own value.
     init(
         server: Server,
         service: any KomgaServing,
         modelContext: ModelContext,
-        downloadSessionConfiguration: URLSessionConfiguration = DownloadSessionProvider.live.makeConfiguration()
+        downloadSessionConfiguration: URLSessionConfiguration
     ) {
         self.server = server
         self.service = service
@@ -45,9 +50,10 @@ final class KomgaSession {
         downloads = DownloadCoordinator(
             service: service,
             modelContext: modelContext,
+            settings: DownloadSettings(),
             sessionConfiguration: downloadSessionConfiguration
         )
-        glasses = GlassesCoordinator()
+        glasses = GlassesCoordinator(settings: GlassesSettings())
         // The only path a manually-built GlassesSceneDelegate has into this
         // session's state — see AppDelegate's doc comment.
         AppDelegate.glassesCoordinator = glasses

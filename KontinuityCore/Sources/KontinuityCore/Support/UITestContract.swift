@@ -100,6 +100,13 @@ public enum AID {
         "series.cell.\(id)"
     }
 
+    /// The "go to the whole series" link, on a shelf cell and on book detail —
+    /// keyed by the *series* id, since that's what it navigates to and there is
+    /// only ever one per screen region.
+    public static func seriesLink(_ id: String) -> String {
+        "series.link.\(id)"
+    }
+
     // Series detail
     public static let seriesDetailTitle = "seriesDetail.title"
     public static let seriesDetailSummary = "seriesDetail.summary"
@@ -157,5 +164,4 @@ public enum AID {
     public static let glassesDimDecrease = "glasses.dimDecrease"
     public static let glassesDimIncrease = "glasses.dimIncrease"
     public static let glassesAutoScrollToggle = "glasses.autoScrollToggle"
-    public static let glassesTouchToggle = "glasses.touchToggle"
 }

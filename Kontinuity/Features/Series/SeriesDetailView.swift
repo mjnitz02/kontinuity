@@ -78,7 +78,9 @@ struct SeriesDetailView: View {
                 .accessibilityIdentifier(AID.seriesDetailTitle)
 
             HStack(spacing: 8) {
-                Text(bookCountSummary)
+                if let bookCountSummary {
+                    Text(bookCountSummary)
+                }
                 if current.oneshot {
                     Text("Oneshot").badgeStyle()
                 }
@@ -201,8 +203,14 @@ struct SeriesDetailView: View {
 
     // MARK: - Presentation
 
-    private var bookCountSummary: String {
+    /// Nil while the only thing on screen is a `KomgaSeries.reference` built
+    /// from a book (`SeriesReference.swift`) — its counts are zeroes standing in
+    /// for "not fetched yet", and "0 books" is a worse answer than no answer for
+    /// the instant before the real row lands. A genuinely empty series says
+    /// "0 books" once `refreshed` proves that's what it is.
+    private var bookCountSummary: String? {
         let count = current.booksCount
+        guard count > 0 || refreshed != nil else { return nil }
         var text = "\(count) book\(count == 1 ? "" : "s")"
         // Komga knows the published total for many series, and "12 of 358" is
         // the difference between a gap in the library and a series still running.

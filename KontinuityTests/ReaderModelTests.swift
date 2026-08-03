@@ -51,6 +51,7 @@ extension SwiftDataTests {
             let downloads = DownloadCoordinator(
                 service: service,
                 modelContext: context,
+                settings: DownloadSettings(),
                 sessionConfiguration: .ephemeral
             )
             let model = ReaderModel(book: Self.book(), service: service, sync: sync, downloads: downloads)

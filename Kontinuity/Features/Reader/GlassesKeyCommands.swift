@@ -36,7 +36,6 @@ enum GlassesKey: Int, CaseIterable {
     case toggleAutoScroll
     case autoScrollSlower
     case autoScrollFaster
-    case toggleTouch
     case nextBook
 }
 
@@ -135,7 +134,6 @@ struct GlassesKeyCommandCatcher: UIViewRepresentable {
             KeyBinding("a", [], .toggleAutoScroll),
             KeyBinding("-", [], .autoScrollSlower),
             KeyBinding("=", [], .autoScrollFaster),
-            KeyBinding("t", [], .toggleTouch),
             KeyBinding("n", [], .nextBook)
         ]
     }

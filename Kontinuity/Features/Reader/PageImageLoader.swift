@@ -38,19 +38,37 @@ final class PageImageLoader {
     /// decoded per page.
     private let maxPixelSize: CGFloat
 
+    /// `nil` defaults rather than `UIScreen.main` in the signature: a default
+    /// argument expression runs in a nonisolated context regardless of the
+    /// initializer's own isolation, so a `@MainActor`-isolated screen lookup
+    /// can only happen in the body below. It also sidesteps `UIScreen.main`
+    /// itself, deprecated in iOS 26 in favour of a scene-scoped screen.
     init(
         service: any KomgaServing,
-        screenSize: CGSize = UIScreen.main.bounds.size,
-        screenScale: CGFloat = UIScreen.main.scale
+        screenSize: CGSize? = nil,
+        screenScale: CGFloat? = nil
     ) {
         self.service = service
-        maxPixelSize = max(screenSize.width, screenSize.height) * screenScale * 1.25
+        let screen = Self.currentScreen()
+        let resolvedSize = screenSize ?? screen?.bounds.size ?? CGSize(width: 1024, height: 1366)
+        let resolvedScale = screenScale ?? screen?.scale ?? 2
+        maxPixelSize = max(resolvedSize.width, resolvedSize.height) * resolvedScale * 1.25
         cache.countLimit = 8
         // Belt and braces with `countLimit`: a page ring that's small by count
         // can still be huge by bytes, and it was memory pressure — NSCache
         // purging a page mid-read, forcing a re-decode on the next band step —
         // that made glasses mode stutter partway through a page.
         cache.totalCostLimit = 192 * 1024 * 1024
+    }
+
+    /// The connected window scene's own screen, in place of the deprecated
+    /// `UIScreen.main` — there's no view context to read one through here
+    /// (`ReaderView` constructs this before any geometry is known), so this
+    /// is the app-wide equivalent Apple's deprecation note points at.
+    private static func currentScreen() -> UIScreen? {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.screen }
+            .first
     }
 
     /// The synchronous cache hit, for callers that would rather render a page

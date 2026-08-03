@@ -123,6 +123,37 @@ final class BrowseUITests: XCTestCase {
         )
     }
 
+    /// A shelf cell has two targets, and the cover's one is already covered by
+    /// every other shelf test — this is the series one, which exists because the
+    /// shelf otherwise only ever leads to a single book.
+    @MainActor
+    func testTheSeriesLinkOnAShelfOpensTheWholeSeries() {
+        app.find(AID.sidebarKeepReading).assertAppears("Keep Reading").tap()
+
+        app.find(AID.seriesLink(UITestFixture.inProgressSeriesID))
+            .assertAppears("The series link on the in-progress book's cell")
+            .tap()
+
+        app.find(AID.seriesDetailTitle).assertAppears("The series detail screen")
+        // The whole series, not just the book we came from — that's the point.
+        app.find(AID.bookRow(UITestFixture.readBookID)).assertAppears("An already-read book of the series")
+        app.find(AID.bookRow(UITestFixture.unreadBookID)).assertAppears("A later unread book of the series")
+    }
+
+    @MainActor
+    func testTheSeriesLinkOnBookDetailOpensTheWholeSeries() {
+        app.find(AID.sidebarKeepReading).assertAppears("Keep Reading").tap()
+        app.find(AID.bookRow(UITestFixture.inProgressBookID)).assertAppears("The in-progress book").tap()
+        app.find(AID.bookDetailTitle).assertAppears("The book detail screen")
+
+        app.find(AID.seriesLink(UITestFixture.inProgressSeriesID))
+            .assertAppears("The series link on book detail")
+            .tap()
+
+        app.find(AID.seriesDetailTitle).assertAppears("The series detail screen")
+        app.find(AID.seriesBookList).assertAppears("The series' book list")
+    }
+
     @MainActor
     func testOnDeckShowsTheNextUnreadBookOfAStartedSeries() {
         app.find(AID.sidebarOnDeck).assertAppears("On Deck").tap()

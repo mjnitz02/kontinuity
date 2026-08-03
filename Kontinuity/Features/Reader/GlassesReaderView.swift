@@ -6,10 +6,10 @@
 //  handling for glasses mode, in both configurations —
 //
 //  - `showsContent: true`, the no-external-display iPad fallback: visible,
-//    landscape, touch always enabled ("there's no blanket and nowhere else
-//    to look").
+//    landscape, touch live.
 //  - `showsContent: false`, a real external display connected: true black,
-//    chrome-free, gated by `glasses.touchArmed`.
+//    chrome-free — this view renders nothing, so there's no touch surface
+//    to speak of either.
 //
 //  Both route through this one view because the external `UIWindowScene` can
 //  never be key (PLAN phase 6's one architectural finding) — the Magic
@@ -83,18 +83,11 @@ struct GlassesReaderView: View {
         glasses.bands.indices.contains(glasses.currentBandIndex) ? glasses.bands[glasses.currentBandIndex] : nil
     }
 
-    /// Touch is only ever gated by `touchArmed` when the iPad panel is the
-    /// blacked-out companion to a real external display — the fallback path
-    /// has no blanket and nowhere else to look, so it's always live there.
-    private var canTouch: Bool {
-        showsContent ? true : glasses.touchArmed
-    }
-
     /// Quarters, not thirds (READER-DESIGN §1 supersedes §2): edge quarters
     /// page, the centre half toggles chrome. The horizontal swipe (PLAN 6B
-    /// §D) is attached to this same container so it shares `canTouch`'s gate
-    /// exactly — a blanket dragging across the glass is a swipe, and gating
-    /// taps but not drags would reopen the hole the gate exists to close.
+    /// §D) is attached to this same container. This view only ever mounts
+    /// when `showsContent` is true, so touch is always live here — there is
+    /// no case where the panel shows content but touch should be refused.
     private var tapZones: some View {
         GeometryReader { proxy in
             HStack(spacing: 0) {
@@ -108,7 +101,6 @@ struct GlassesReaderView: View {
             .contentShape(Rectangle())
             .gesture(swipeGesture)
         }
-        .allowsHitTesting(canTouch)
     }
 
     private func tapZone(width: CGFloat, action: @escaping () -> Void) -> some View {
@@ -155,17 +147,14 @@ struct GlassesReaderView: View {
         if glasses.isAutoScrolling {
             parts.append("auto")
         }
-        if glasses.touchArmed {
-            parts.append("touch")
-        }
         return parts.joined(separator: " · ")
     }
 
     /// The fallback path's chrome (PLAN 6B §C's "Chrome" work item,
-    /// READER-DESIGN §3's iPhone section): "next volume, dim, auto-scroll,
-    /// and the touch toggle have no gesture. Those go in chrome, reached by
-    /// the centre-half tap, alongside the page indicator" — a phone in
-    /// landscape has no keyboard to reach them with otherwise. `Exit` sits in
+    /// READER-DESIGN §3's iPhone section): "next volume, dim, and auto-scroll
+    /// have no gesture. Those go in chrome, reached by the centre-half tap,
+    /// alongside the page indicator" — a phone in landscape has no keyboard
+    /// to reach them with otherwise. `Exit` sits in
     /// the top-right, inside the right paging quarter, so it's kept a
     /// sibling above the tap layer rather than shadowed by it.
     private var chrome: some View {
@@ -197,12 +186,6 @@ struct GlassesReaderView: View {
                     Image(systemName: glasses.isAutoScrolling ? "pause.fill" : "play.fill")
                 }
                 .accessibilityIdentifier(AID.glassesAutoScrollToggle)
-                Button {
-                    glasses.toggleTouch()
-                } label: {
-                    Image(systemName: glasses.touchArmed ? "hand.tap.fill" : "hand.tap")
-                }
-                .accessibilityIdentifier(AID.glassesTouchToggle)
                 if isAtLastBand {
                     Button("Next volume", action: onNextBook)
                         .accessibilityIdentifier(AID.glassesNextBook)
@@ -234,7 +217,7 @@ struct GlassesReaderView: View {
         case .exit: onExit()
         case .nextBook: onNextBook()
         case .dimDecrease, .dimIncrease, .toggleAutoScroll,
-             .autoScrollSlower, .autoScrollFaster, .toggleTouch:
+             .autoScrollSlower, .autoScrollFaster:
             handleControl(key)
         }
     }
@@ -246,7 +229,6 @@ struct GlassesReaderView: View {
         case .toggleAutoScroll: glasses.toggleAutoScroll()
         case .autoScrollSlower: glasses.adjustAutoScrollSpeed(by: -0.25)
         case .autoScrollFaster: glasses.adjustAutoScrollSpeed(by: 0.25)
-        case .toggleTouch: glasses.toggleTouch()
         case .advanceBand, .retreatBand, .nextPage, .previousPage, .exit, .nextBook:
             break
         }
