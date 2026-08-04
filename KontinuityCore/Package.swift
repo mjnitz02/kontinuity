@@ -9,6 +9,13 @@ let package = Package(
     name: "KontinuityCore",
     platforms: [.iOS("26.0")],
     products: [
+        // Static. This makes the ObjC runtime log "class ... is implemented in
+        // both" during `make test-unit`, because the library lands in the app
+        // binary *and* in the xctest bundle injected into it. Harmless here —
+        // no model object crosses that boundary — and the alternative is worse:
+        // `type: .dynamic` makes the app link @rpath/KontinuityCore.framework
+        // without Xcode embedding it in the .app, so `make deploy` / `make ipa`
+        // produce a build that dyld kills on launch. Verified, not assumed.
         .library(name: "KontinuityCore", targets: ["KontinuityCore"])
     ],
     targets: [

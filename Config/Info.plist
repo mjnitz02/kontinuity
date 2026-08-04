@@ -28,5 +28,31 @@
 	-->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Kontinuity connects to your Komga server on your local network to browse and download your library.</string>
+
+	<!--
+	  Mode B's external display (PLAN phase 6, READER-DESIGN §3). SwiftUI's
+	  WindowGroup has no concept of the external-display scene role, so this
+	  hands that one role to GlassesSceneDelegate (a plain UIKit
+	  UIWindowSceneDelegate) via AppDelegate.application(_:configurationForConnecting:options:)
+	  — the main interactive scene stays entirely SwiftUI's, untouched by
+	  this manifest existing at all.
+	-->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleExternalDisplayNonInteractive</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>External Display</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).GlassesSceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 </dict>
 </plist>

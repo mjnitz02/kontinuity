@@ -6,6 +6,7 @@ included:
   - Kontinuity
   - KontinuityCore/Sources
   - KontinuityTests
+  - KontinuityUITests
 
 excluded:
   - .build
@@ -55,5 +56,5 @@ function_body_length:
   error: 150
 
 file_length:
-  warning: 500
+  warning: 550
   error: 800

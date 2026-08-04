@@ -38,6 +38,16 @@
                ReferencedContainer = "container:Kontinuity.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AA0000000000000000000027"
+               BuildableName = "KontinuityUITests.xctest"
+               BlueprintName = "KontinuityUITests"
+               ReferencedContainer = "container:Kontinuity.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

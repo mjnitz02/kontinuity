@@ -6,3 +6,14 @@ DEVICE_ID = 00000000-0000000000000000
 
 # Optional: override the simulator used by `make build` / `make test-unit`.
 # SIMULATOR_NAME = iPad Pro 11-inch (M5)
+
+# Optional: a local Komga instance to develop against — see the komga-docker
+# setup for a disposable one. Credentials belong here, not in the Makefile,
+# because this file is gitignored and that one isn't.
+#
+#   make komga-up / komga-check / komga-address / komga-stop
+# KOMGA_DIR      = $(HOME)/workspaces/komga-docker
+# KOMGA_URL      = http://localhost:25600
+# KOMGA_EMAIL    = you@example.com
+# KOMGA_PASSWORD = your-password
+# KOMGA_API_KEY  = your-api-key
