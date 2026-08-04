@@ -20,7 +20,13 @@
     import KontinuityCore
     import UIKit
 
-    struct StubKomgaService: KomgaServing {
+    /// `nonisolated` on the type itself, not inferred from `KomgaServing:
+    /// Sendable` — Sendable conformance alone doesn't opt a declaration out
+    /// of the module's default `MainActor` isolation, so every method here
+    /// would otherwise silently go back to being main-actor-isolated (and
+    /// unable to read `Fixtures`, itself `nonisolated`) the next time one is
+    /// added without a manual annotation.
+    nonisolated struct StubKomgaService: KomgaServing {
         var user = KomgaUser(
             id: "stub-user",
             email: "uitest@example.com",
@@ -242,7 +248,7 @@
         }
     }
 
-    private extension KomgaBook {
+    private nonisolated extension KomgaBook {
         /// The stub filters on read status the way Komga's query does.
         var status: KomgaReadStatus {
             switch readState {
@@ -253,7 +259,7 @@
         }
     }
 
-    private extension KomgaSeries {
+    private nonisolated extension KomgaSeries {
         /// Mirrors `SeriesSearchHelper.kt`'s `SearchCondition.ReadStatus`: READ
         /// when every book is, UNREAD when none have been touched, IN_PROGRESS
         /// for everything in between.

@@ -478,13 +478,16 @@ final class GlassesCoordinator {
     /// `nonisolated` (overriding the class's default `MainActor` isolation)
     /// so `startScreenObserving()`'s disconnect handler — which runs on
     /// whatever thread posted the notification — can call it synchronously.
+    /// UIKit posts `UIScreenDidConnect`/`DidDisconnect` on the main thread,
+    /// so `assumeIsolated` just tells the compiler what's already true
+    /// rather than changing any timing.
     /// Still reads the deprecated `UIScreen.screens`: it's the only API that
     /// reports every physically attached screen, including one mirrored
     /// without a matching `UIWindowScene`, which `isExternalSceneConnected`
     /// can't see. No replacement preserves that without collapsing the two
     /// signals — see the project memory on migrating this bridge.
     private nonisolated static func hasExternalScreen() -> Bool {
-        UIScreen.screens.count > 1
+        MainActor.assumeIsolated { UIScreen.screens.count > 1 }
     }
 
     /// Called by `GlassesSceneDelegate.scene(_:willConnectTo:)` via

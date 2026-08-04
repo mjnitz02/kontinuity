@@ -12,7 +12,11 @@
 import Foundation
 import KontinuityCore
 
-struct GlassesSettings: Sendable {
+/// `nonisolated` on the type itself — `Sendable` conformance alone doesn't
+/// opt a declaration out of the module's default `MainActor` isolation, so
+/// `init(defaults:)` needs this to stay callable as a default-parameter
+/// expression, which is evaluated in a synchronous nonisolated context.
+nonisolated struct GlassesSettings: Sendable {
     static let defaultDimLevel: Double = 0
     static let defaultAutoScrollSpeed: Double = 1
     static let defaultBandOverlap: Double = 0.08

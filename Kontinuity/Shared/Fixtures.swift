@@ -18,12 +18,13 @@
     import KontinuityCore
     import UIKit
 
-    /// Explicit `Sendable` opts this out of the module's default `MainActor`
-    /// isolation (SE-0466) — every member is pure, immutable fixture data,
-    /// and `StubKomgaService`'s methods (nonisolated, since `KomgaServing:
-    /// Sendable` gets the same opt-out) need to read it from off the main
+    /// `nonisolated` on the type itself (not just `Sendable` conformance,
+    /// which alone does *not* opt a declaration out of the module's default
+    /// `MainActor` isolation — every member added here otherwise silently
+    /// inherits it again) — every member is pure, immutable fixture data,
+    /// and `StubKomgaService`'s methods need to read it from off the main
     /// actor.
-    enum Fixtures: Sendable {
+    nonisolated enum Fixtures: Sendable {
         static let libraries = [
             KomgaLibrary(id: UITestFixture.mangaLibraryID, name: "Manga"),
             KomgaLibrary(id: UITestFixture.comicsLibraryID, name: "Comics")
@@ -233,7 +234,7 @@
     /// zero-padded page numbers so natural sort matches insertion order.
     /// `CBZArchive` is a reader; this is its mirror image, kept here rather
     /// than in Core because nothing at runtime ever needs to *write* a CBZ.
-    enum StoredZipWriter {
+    nonisolated enum StoredZipWriter {
         static func make(pages: [Data]) -> Data {
             var body = Data()
             var central = Data()
@@ -296,7 +297,7 @@
         }
     }
 
-    extension Data {
+    nonisolated extension Data {
         mutating func appendUInt16(_ value: UInt16) {
             append(UInt8(value & 0xFF))
             append(UInt8((value >> 8) & 0xFF))
