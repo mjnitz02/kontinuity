@@ -101,7 +101,7 @@ struct GlassesReaderView: View {
                     .frame(width: proxy.size.width / 2)
                     .contentShape(Rectangle())
                     .onTapGesture { withAnimation { chromeVisible.toggle() } }
-                tapZone(width: proxy.size.width / 4, action: glasses.advanceBand)
+                tapZone(width: proxy.size.width / 4, action: advanceOrNextBook)
             }
             .contentShape(Rectangle())
             .gesture(swipeGesture)
@@ -127,11 +127,28 @@ struct GlassesReaderView: View {
                 let dy = value.translation.height
                 guard abs(dx) > abs(dy) else { return }
                 if dx < 0 {
-                    glasses.advanceBand()
+                    advanceOrNextBook()
                 } else {
                     glasses.retreatBand()
                 }
             }
+    }
+
+    /// Mode B's edge-of-book (READER-DESIGN §1's "one control model" applied
+    /// to the forward gesture): `advanceBand()` alone just no-ops past the
+    /// last band, same as it always has for the keyboard's `→`/`Space`, which
+    /// is why "N"/the chrome button were the only way to reach the next
+    /// volume by touch. No two-tap toast here the way Mode A's overswipe
+    /// needs one — a `TabView` bounce is ambiguous about intent the way a
+    /// quarter-tap or a thresholded swipe isn't, the same reasoning that
+    /// keeps the continuous surface's footer button a single action (PLAN
+    /// §12, phase 9 known limits).
+    private func advanceOrNextBook() {
+        if isAtLastBand {
+            onNextBook()
+        } else {
+            glasses.advanceBand()
+        }
     }
 
     private var statusLine: some View {

@@ -190,6 +190,18 @@ public struct KomgaClient: KomgaServing {
         _ = try await send(request)
     }
 
+    public func markRead(bookID: String) async throws {
+        var request = makeRequest(path: "/api/v1/books/\(bookID)/read-progress", method: "PATCH")
+        request.httpBody = try JSONEncoder().encode(KomgaReadProgressRequest(completed: true))
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        _ = try await send(request)
+    }
+
+    public func markUnread(bookID: String) async throws {
+        let request = makeRequest(path: "/api/v1/books/\(bookID)/read-progress", method: "DELETE")
+        _ = try await send(request)
+    }
+
     // MARK: - KomgaServing: download
 
     public func fileData(forBook bookID: String) async throws -> Data {
@@ -363,6 +375,12 @@ struct ProgressionLocator: Encodable {
 
 struct PositionLocation: Encodable {
     let position: Int
+}
+
+/// The read-progress PATCH body (KOMGA-API §4) — `markRead`'s only shape;
+/// `markUnread` is a bodyless DELETE.
+struct KomgaReadProgressRequest: Encodable {
+    let completed: Bool
 }
 
 /// Komga serialises `ZonedDateTime` with an offset and `LocalDateTime` without

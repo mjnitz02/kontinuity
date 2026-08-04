@@ -142,6 +142,45 @@ final class GlassesModeUITests: XCTestCase {
         )
     }
 
+    /// The bug this guards against: `advanceBand()` alone silently no-ops on
+    /// the last band, so a forward tap/swipe used to just do nothing once the
+    /// reader ran out of bands — the only way on by touch was the explicit
+    /// "Next volume" chrome button. Windrunner Vol. 4 (`unanalysedBookID`)
+    /// follows Vol. 3 in the fixture series with zero pages, so its arrival
+    /// is asserted the same way `ReaderUITests` does for Mode A: the status
+    /// line has nothing left to show a page count for.
+    @MainActor
+    func testTappingPastTheLastBandAdvancesToTheNextBook() {
+        enterGlassesMode()
+
+        // The status line only appears once a keypress/tap registers with
+        // `GlassesCoordinator` (`registerKeyPress`) — unlike chrome's
+        // `glassesPageLabel`, it isn't visible on entry. This first tap
+        // primes it, same as every other test in this file taps/types before
+        // ever reading the label.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
+        app.find(AID.glassesStatusLabel).assertAppears("The band status line")
+
+        var reachedLastBand = false
+        for _ in 0 ..< 50 {
+            let label = app.find(AID.glassesStatusLabel).label
+            let parts = label.split(separator: "/").map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count >= 2, parts[0] == parts[1] {
+                reachedLastBand = true
+                break
+            }
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(reachedLastBand, "Should be able to reach the last band by tapping the right quarter")
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
+
+        XCTAssertTrue(
+            app.find(AID.glassesStatusLabel).waitForNonExistence(timeout: 3),
+            "A forward tap on the last band should advance to the next book, whose fixture has zero pages"
+        )
+    }
+
     @MainActor
     private func enterGlassesMode() {
         app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Windrunner's cell").tap()

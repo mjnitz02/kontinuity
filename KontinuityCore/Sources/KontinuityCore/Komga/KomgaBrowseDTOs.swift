@@ -272,6 +272,25 @@ public struct KomgaBook: Decodable, Sendable, Hashable, Identifiable {
         return .inProgress(page: readProgress.page, of: media.pagesCount)
     }
 
+    /// A copy with `readProgress` swapped out — how the detail screen reflects
+    /// a read/unread toggle immediately, without waiting on a re-fetch.
+    public func withReadProgress(_ readProgress: KomgaReadProgress?) -> KomgaBook {
+        KomgaBook(
+            id: id,
+            seriesId: seriesId,
+            seriesTitle: seriesTitle,
+            libraryId: libraryId,
+            name: name,
+            sizeBytes: sizeBytes,
+            size: size,
+            media: media,
+            metadata: metadata,
+            readProgress: readProgress,
+            oneshot: oneshot,
+            deleted: deleted
+        )
+    }
+
     /// Only DIVINA books are readable by this app (PLAN §1 rules out EPUB/PDF),
     /// and Komga reports `pagesCount == 0` until analysis finishes — so an
     /// unanalysed book must not be offered as readable (KOMGA-API §6).

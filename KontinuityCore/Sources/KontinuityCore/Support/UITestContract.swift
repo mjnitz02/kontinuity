@@ -166,6 +166,10 @@ public enum AID {
     /// The "swipe/tap again to continue" toast shown on the last page of a
     /// book (READER-DESIGN §2's Komga-style two-step advance).
     public static let readerNextChapterToast = "reader.nextChapterToast"
+    /// Mode A's own per-page/continuous correction (PLAN §12) — the panel
+    /// counterpart to `glassesFlowToggle`, reachable without ever entering
+    /// glasses mode.
+    public static let readerFlowToggle = "reader.flowToggle"
 
     // Glasses mode (Mode B, READER-DESIGN §3)
     public static let readerGlassesModeButton = "reader.glassesModeButton"

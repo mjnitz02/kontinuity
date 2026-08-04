@@ -247,6 +247,14 @@ private final class MockKomgaServing: KomgaServing, @unchecked Sendable {
         try putResult.get()
     }
 
+    func markRead(bookID _: String) async throws {
+        fatalError("unused")
+    }
+
+    func markUnread(bookID _: String) async throws {
+        fatalError("unused")
+    }
+
     func fileData(forBook _: String) async throws -> Data {
         fatalError("unused")
     }

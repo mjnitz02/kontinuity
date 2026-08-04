@@ -342,6 +342,14 @@ private final class FakeDownloadService: KomgaServing, @unchecked Sendable {
         fatalError("unused")
     }
 
+    func markRead(bookID _: String) async throws {
+        fatalError("unused")
+    }
+
+    func markUnread(bookID _: String) async throws {
+        fatalError("unused")
+    }
+
     func fileData(forBook _: String) async throws -> Data {
         fatalError("unused")
     }

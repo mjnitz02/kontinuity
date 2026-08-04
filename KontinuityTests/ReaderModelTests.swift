@@ -68,6 +68,36 @@ extension SwiftDataTests {
             #expect(service.putCalls.map(\.page) == [3, 5])
         }
 
+        @Test("setFlow updates the model and persists the per-series override, mirroring GlassesCoordinator.setFlow")
+        func setFlowPersistsOverride() async throws {
+            let context = try makeContext()
+            let device = KomgaDevice(id: UUID(), name: "Test iPad")
+            let service = RecordingKomgaService()
+            let sync = ProgressionSyncEngine(service: service, modelContext: context, device: device)
+            let downloads = DownloadCoordinator(
+                service: service,
+                modelContext: context,
+                settings: DownloadSettings(),
+                sessionConfiguration: .ephemeral
+            )
+            let settings = try GlassesSettings(defaults: #require(UserDefaults(suiteName: "ReaderModelTests.setFlow.\(UUID())")))
+            let book = Self.book()
+            let model = ReaderModel(
+                book: book,
+                service: service,
+                sync: sync,
+                downloads: downloads,
+                glassesSettings: settings
+            )
+            await model.load()
+            #expect(model.flow == .perPage)
+
+            model.setFlow(.continuous)
+
+            #expect(model.flow == .continuous)
+            #expect(settings.flowOverride(forSeries: book.seriesId) == .continuous)
+        }
+
         private static func book(pages: Int = 6) -> KomgaBook {
             KomgaBook(
                 id: "b1",
@@ -162,5 +192,13 @@ private final class RecordingKomgaService: KomgaServing, @unchecked Sendable {
 
     func putProgression(bookID: String, write: ProgressionWrite, device _: KomgaDevice) async throws {
         putCalls.append((bookID: bookID, page: write.page))
+    }
+
+    func markRead(bookID _: String) async throws {
+        fatalError("unused")
+    }
+
+    func markUnread(bookID _: String) async throws {
+        fatalError("unused")
     }
 }

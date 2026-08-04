@@ -182,6 +182,14 @@
             // work, neither of which depends on this landing anywhere.
         }
 
+        func markRead(bookID _: String) async throws {
+            try checkOnline()
+        }
+
+        func markUnread(bookID _: String) async throws {
+            try checkOnline()
+        }
+
         // MARK: - Download
 
         /// A real ZIP, built from the same fixture page images the reader

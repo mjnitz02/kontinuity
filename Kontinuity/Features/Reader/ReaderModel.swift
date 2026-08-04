@@ -25,7 +25,7 @@ final class ReaderModel {
     private let sync: ProgressionSyncEngine
     private let downloads: DownloadCoordinator
     private let localStore = LocalBookStore()
-    private let glassesSettings = GlassesSettings()
+    private let glassesSettings: GlassesSettings
 
     private(set) var pageSources: [PageSource] = []
     private(set) var spreads: [PageSpread] = []
@@ -56,11 +56,18 @@ final class ReaderModel {
         }
     }
 
-    init(book: KomgaBook, service: any KomgaServing, sync: ProgressionSyncEngine, downloads: DownloadCoordinator) {
+    init(
+        book: KomgaBook,
+        service: any KomgaServing,
+        sync: ProgressionSyncEngine,
+        downloads: DownloadCoordinator,
+        glassesSettings: GlassesSettings = GlassesSettings()
+    ) {
         self.book = book
         self.service = service
         self.sync = sync
         self.downloads = downloads
+        self.glassesSettings = glassesSettings
     }
 
     var pageCount: Int {
@@ -121,6 +128,18 @@ final class ReaderModel {
         if let currentPage, let newIndex = spreads.firstIndex(where: { $0.pageIndices.contains(currentPage) }) {
             currentSpreadIndex = newIndex
         }
+    }
+
+    /// Mode A's own correction of `BandLayout.resolvedFlow`'s guess — the
+    /// panel counterpart to `GlassesCoordinator.setFlow`, reading and writing
+    /// the same per-series override so a correction made here is what glasses
+    /// mode sees on its next entry, and vice versa. Position-preserving is
+    /// `ReaderView`'s job (mirroring `exitGlassesModeToMatchingPage`), since
+    /// this model has no notion of the continuous surface's scroll offset.
+    func setFlow(_ newFlow: BandFlow) {
+        guard newFlow != flow else { return }
+        flow = newFlow
+        glassesSettings.setFlowOverride(newFlow, forSeries: book.seriesId)
     }
 
     func advance() {

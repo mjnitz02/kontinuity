@@ -43,6 +43,7 @@ struct ContinuousReaderView: View {
     let onStartNextBook: (KomgaBook) -> Void
     let onDone: () -> Void
     let onEnterGlasses: () -> Void
+    let onToggleFlow: () -> Void
 
     @State private var chromeVisible = true
     @State private var scrollOffset: Double = 0
@@ -172,6 +173,10 @@ struct ContinuousReaderView: View {
                         .accessibilityIdentifier(AID.readerPageLabel)
                 }
                 Spacer()
+                Button(action: onToggleFlow) {
+                    Image(systemName: "arrow.up.and.down")
+                }
+                .accessibilityIdentifier(AID.readerFlowToggle)
                 Button(action: onEnterGlasses) {
                     Image(systemName: "eyeglasses")
                 }

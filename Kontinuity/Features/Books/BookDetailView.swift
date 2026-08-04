@@ -19,6 +19,8 @@ struct BookDetailView: View {
     /// the list happened to be holding.
     @State private var refreshed: KomgaBook?
     @State private var showingReader = false
+    @State private var isTogglingReadState = false
+    @State private var readStateError: String?
     @Query private var bookRows: [Book]
 
     private var downloadRow: Book? {
@@ -80,10 +82,22 @@ struct BookDetailView: View {
                 SeriesLink(book: current)
             }
 
-            ReadStateLabel(state: current.readState)
-                .font(.subheadline)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier(AID.bookDetailState)
+            Button {
+                toggleReadState()
+            } label: {
+                ReadStateLabel(state: current.readState)
+            }
+            .font(.subheadline)
+            .disabled(isTogglingReadState)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(AID.bookDetailState)
+            .accessibilityHint("Double tap to change read status")
+
+            if let readStateError {
+                Text(readStateError)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
 
             if let progress = current.readProgress {
                 // Which device last moved this book is exactly the information
@@ -189,6 +203,48 @@ struct BookDetailView: View {
             Text(label).foregroundStyle(.secondary)
             Text(value)
         }
+    }
+
+    /// Cycles unread/in-progress → read → unread on a single tap each, so
+    /// backing out of an accidental "read" or a too-fast skim is just a
+    /// second tap rather than a trip to Komga's web UI. Applied optimistically
+    /// — the whole point of surfacing this here is that it should feel as
+    /// instant as the tap itself — then pushed to the server; a failure rolls
+    /// back by re-fetching the real state rather than guessing at one.
+    private func toggleReadState() {
+        guard !isTogglingReadState else { return }
+        let bookID = current.id
+        let pagesCount = current.media.pagesCount
+        let markingRead = current.readState != .read
+
+        isTogglingReadState = true
+        readStateError = nil
+        refreshed = current.withReadProgress(markingRead ? optimisticReadProgress() : nil)
+        session.sync.applyExplicitReadState(bookID: bookID, read: markingRead, pagesCount: pagesCount)
+
+        Task {
+            defer { isTogglingReadState = false }
+            do {
+                if markingRead {
+                    try await session.service.markRead(bookID: bookID)
+                } else {
+                    try await session.service.markUnread(bookID: bookID)
+                }
+            } catch {
+                readStateError = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
+                await reload()
+            }
+        }
+    }
+
+    private func optimisticReadProgress() -> KomgaReadProgress {
+        KomgaReadProgress(
+            page: current.media.pagesCount,
+            completed: true,
+            readDate: .now,
+            deviceId: session.server.deviceID.uuidString,
+            deviceName: session.server.deviceName
+        )
     }
 
     private func reload() async {

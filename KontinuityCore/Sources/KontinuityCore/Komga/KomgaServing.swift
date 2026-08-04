@@ -82,6 +82,15 @@ public protocol KomgaServing: Sendable {
     /// `PUT .../progression`.
     func putProgression(bookID: String, write: ProgressionWrite, device: KomgaDevice) async throws
 
+    /// `PATCH /api/v1/books/{id}/read-progress` with `{"completed": true}` —
+    /// the only way to mark a book read other than pushing progression to its
+    /// final page (KOMGA-API §4).
+    func markRead(bookID: String) async throws
+
+    /// `DELETE /api/v1/books/{id}/read-progress` — clears read progress
+    /// entirely, the only way back to "never opened" (KOMGA-API §4).
+    func markUnread(bookID: String) async throws
+
     // MARK: - Download (phase 5)
 
     /// `GET /opds/v2/books/{id}/file` — the whole CBZ, one request. Requires

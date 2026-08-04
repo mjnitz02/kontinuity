@@ -55,6 +55,24 @@ final class ProgressionSyncEngine {
         scheduleFlush()
     }
 
+    /// Called after the detail screen's explicit read/unread toggle pushes to
+    /// Komga — updates the local row directly rather than through
+    /// `reconcile`, since a `DELETE read-progress` collapses the server side
+    /// back to "never opened" (nil), a state `ProgressionSync.reconcile`
+    /// can't tell apart from "no local row has ever pushed" and would
+    /// therefore leave stale. No-op when this device has no row for the book
+    /// at all — nothing here needs resetting, and the next fetch already
+    /// carries the real server state.
+    func applyExplicitReadState(bookID: String, read: Bool, pagesCount: Int, at date: Date = .now) {
+        guard let existing = fetchExisting(bookID: bookID) else { return }
+        existing.localPage = read ? pagesCount : 0
+        existing.localReadDate = date
+        existing.serverPage = read ? pagesCount : nil
+        existing.serverReadDate = read ? date : nil
+        existing.isPending = false
+        try? modelContext.save()
+    }
+
     private func scheduleFlush() {
         flushTask?.cancel()
         flushTask = Task {

@@ -158,8 +158,24 @@ struct ReaderView: View {
             onReachEnd: { Task { await model.loadNextBookIfNeeded() } },
             onStartNextBook: openNextBook,
             onDone: { dismiss() },
-            onEnterGlasses: enterGlassesMode
+            onEnterGlasses: enterGlassesMode,
+            onToggleFlow: toggleFlow
         )
+    }
+
+    /// Mode A's own per-page/continuous correction (PLAN §12) — mirrors
+    /// `GlassesCoordinator.toggleFlow`, and is position-preserving the same
+    /// way `exitGlassesModeToMatchingPage` is: the page currently showing on
+    /// whichever surface is active carries over to the other.
+    private func toggleFlow() {
+        let resumePageIndex = currentLeadingPageIndex
+        let newFlow: BandFlow = model.flow == .continuous ? .perPage : .continuous
+        model.setFlow(newFlow)
+        if newFlow == .continuous {
+            continuousPageIndex = resumePageIndex
+        } else if let spreadIndex = model.spreads.firstIndex(where: { $0.pageIndices.contains(resumePageIndex) }) {
+            model.currentSpreadIndex = spreadIndex
+        }
     }
 
     private var reader: some View {
@@ -255,6 +271,10 @@ struct ReaderView: View {
                         .accessibilityIdentifier(AID.readerPageLabel)
                 }
                 Spacer()
+                Button(action: toggleFlow) {
+                    Image(systemName: "square.stack")
+                }
+                .accessibilityIdentifier(AID.readerFlowToggle)
                 Button(action: enterGlassesMode) {
                     Image(systemName: "eyeglasses")
                 }
