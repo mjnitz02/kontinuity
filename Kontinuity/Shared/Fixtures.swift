@@ -18,7 +18,12 @@
     import KontinuityCore
     import UIKit
 
-    enum Fixtures {
+    /// Explicit `Sendable` opts this out of the module's default `MainActor`
+    /// isolation (SE-0466) — every member is pure, immutable fixture data,
+    /// and `StubKomgaService`'s methods (nonisolated, since `KomgaServing:
+    /// Sendable` gets the same opt-out) need to read it from off the main
+    /// actor.
+    enum Fixtures: Sendable {
         static let libraries = [
             KomgaLibrary(id: UITestFixture.mangaLibraryID, name: "Manga"),
             KomgaLibrary(id: UITestFixture.comicsLibraryID, name: "Comics")

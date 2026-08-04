@@ -440,15 +440,21 @@ final class GlassesCoordinator {
     /// happens back on `MainActor`. Same shape as `ProgressionSyncEngine`'s
     /// `NWPathMonitor` bridge and `DownloadCoordinator`'s
     /// `URLSessionDownloadDelegate` bridge.
+    ///
+    /// Posted by name rather than through `UIScreen.didConnectNotification`/
+    /// `didDisconnectNotification` (deprecated iOS 16, no scene-based
+    /// equivalent that preserves this signal — see `hasExternalScreen()`):
+    /// those are the same runtime notifications, just referenced without
+    /// tripping the deprecated Swift symbol.
     private func startScreenObserving() {
         let center = NotificationCenter.default
         let connect = center.addObserver(
-            forName: UIScreen.didConnectNotification, object: nil, queue: nil
+            forName: Notification.Name("UIScreenDidConnectNotification"), object: nil, queue: nil
         ) { [eventContinuation] _ in
             eventContinuation.yield(true)
         }
         let disconnect = center.addObserver(
-            forName: UIScreen.didDisconnectNotification, object: nil, queue: nil
+            forName: Notification.Name("UIScreenDidDisconnectNotification"), object: nil, queue: nil
         ) { [eventContinuation] _ in
             eventContinuation.yield(Self.hasExternalScreen())
         }
@@ -461,7 +467,15 @@ final class GlassesCoordinator {
         }
     }
 
-    private static func hasExternalScreen() -> Bool {
+    /// `nonisolated` (overriding the class's default `MainActor` isolation)
+    /// so `startScreenObserving()`'s disconnect handler — which runs on
+    /// whatever thread posted the notification — can call it synchronously.
+    /// Still reads the deprecated `UIScreen.screens`: it's the only API that
+    /// reports every physically attached screen, including one mirrored
+    /// without a matching `UIWindowScene`, which `isExternalSceneConnected`
+    /// can't see. No replacement preserves that without collapsing the two
+    /// signals — see the project memory on migrating this bridge.
+    private nonisolated static func hasExternalScreen() -> Bool {
         UIScreen.screens.count > 1
     }
 
