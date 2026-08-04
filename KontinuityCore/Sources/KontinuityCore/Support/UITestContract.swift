@@ -189,6 +189,8 @@ public enum AID {
     public static let glassesDimDecrease = "glasses.dimDecrease"
     public static let glassesDimIncrease = "glasses.dimIncrease"
     public static let glassesAutoScrollToggle = "glasses.autoScrollToggle"
+    public static let glassesSpeedDecrease = "glasses.speedDecrease"
+    public static let glassesSpeedIncrease = "glasses.speedIncrease"
     /// Corrects `BandLayout.isLongStrip`'s per-page/continuous guess for the
     /// whole series (PLAN §12).
     public static let glassesFlowToggle = "glasses.flowToggle"

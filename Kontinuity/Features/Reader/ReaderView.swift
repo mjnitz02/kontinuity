@@ -9,6 +9,7 @@
 
 import KontinuityCore
 import SwiftUI
+import UIKit
 
 struct ReaderView: View {
     let book: KomgaBook
@@ -343,7 +344,23 @@ struct ReaderView: View {
     /// land here — same action, different trigger (PLAN 6B §B). Entering at
     /// `currentLeadingPageIndex` rather than band 0 of the book is gap 2
     /// (PLAN 6B §C): a rotation must not throw the reader back to page 1.
+    /// The eyeglasses button doesn't itself turn the phone sideways, and
+    /// glasses mode has no portrait layout at all on an iPhone — left
+    /// unrotated, entry via the button (rather than via the rotation this
+    /// mode is actually designed around) leaves bands rendered into a
+    /// portrait frame. Nudging the scene to landscape here closes that gap;
+    /// it's a no-op on iPad, which has a real portrait glasses layout and
+    /// whose button is left untouched (PLAN 6B §B).
+    private func rotateToLandscapeIfPhone() {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        guard let scene = UIApplication.shared.connectedScenes
+            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
+        else { return }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape))
+    }
+
     private func enterGlassesMode() {
+        rotateToLandscapeIfPhone()
         glasses.enter(
             GlassesContent(
                 pageSources: model.pageSources,

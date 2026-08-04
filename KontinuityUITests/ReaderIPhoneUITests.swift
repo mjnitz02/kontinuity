@@ -84,6 +84,32 @@ final class ReaderIPhoneUITests: XCTestCase {
         XCTAssertEqual(pageLabel.label, "3 / 6", "Rotating back to portrait should resume on the same page.")
     }
 
+    /// The bug this guards against: the chrome's eyeglasses button (shared
+    /// with iPad) used to just flip `glasses.isActive` without touching the
+    /// device's actual orientation, so tapping it in portrait left Mode B's
+    /// bands rendered into a portrait frame — the "weird" state glasses mode
+    /// was never designed to handle on an iPhone. Entering via the button
+    /// now requests a landscape rotation the same way physically turning the
+    /// phone would.
+    @MainActor
+    func testTappingGlassesButtonInPortraitRotatesToLandscape() {
+        openReader()
+        app.find(AID.readerPageLabel).assertAppears("Mode A's page indicator")
+
+        app.find(AID.readerGlassesModeButton).assertAppears("The glasses mode button").tap()
+
+        app.find(AID.glassesPageLabel).assertAppears("Glasses mode chrome after tapping the button")
+        // `XCUIDevice.shared.orientation` only reflects orientation the test
+        // itself set, not one the app under test triggered via
+        // `requestGeometryUpdate` — the window's own frame is what actually
+        // shows whether the interface rotated.
+        let frame = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(
+            frame.width, frame.height,
+            "Tapping the glasses button on iPhone should rotate the device to landscape, got frame \(frame)"
+        )
+    }
+
     /// There is no second mode to fall back to in landscape on an iPhone, so
     /// Exit's meaning is unchanged: it leaves the reader, not just Mode B
     /// (READER-DESIGN §3's iPhone section).

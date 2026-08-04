@@ -123,6 +123,12 @@ final class GlassesCoordinator {
     private(set) var lastKeyPressDate: Date?
     private var statusLineTask: Task<Void, Never>?
 
+    /// Set only by `adjustAutoScrollSpeed`, so the status line reads as "3.0s
+    /// / move" instead of the usual band-position text while a speed tap is
+    /// fresh — cleared by the same fade timer that hides the status line, so
+    /// it can never linger into an unrelated keypress.
+    private(set) var speedIndicatorText: String?
+
     private let eventStream: AsyncStream<Bool>
     private let eventContinuation: AsyncStream<Bool>.Continuation
     /// Read only in `startScreenObserving()` and `deinit` — `deinit` can't be
@@ -376,7 +382,7 @@ final class GlassesCoordinator {
 
     func adjustAutoScrollSpeed(by delta: Double) {
         autoScrollSpeed = min(5, max(0.25, autoScrollSpeed + delta))
-        registerKeyPress()
+        registerKeyPress(speedIndicator: String(format: "%.1fs / move", 3.0 / autoScrollSpeed))
         // Restart at the new interval immediately rather than waiting out
         // whatever's left of the old one.
         if isAutoScrolling {
@@ -412,14 +418,16 @@ final class GlassesCoordinator {
         currentBandIndex += 1
     }
 
-    private func registerKeyPress() {
+    private func registerKeyPress(speedIndicator: String? = nil) {
         lastKeyPressDate = .now
         isStatusLineVisible = true
+        speedIndicatorText = speedIndicator
         statusLineTask?.cancel()
         statusLineTask = Task {
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
             isStatusLineVisible = false
+            speedIndicatorText = nil
         }
     }
 

@@ -154,7 +154,7 @@ struct GlassesReaderView: View {
     private var statusLine: some View {
         VStack {
             Spacer()
-            Text(statusText)
+            Text(glasses.speedIndicatorText ?? statusText)
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.6))
                 .padding(.bottom, 24)
@@ -209,11 +209,23 @@ struct GlassesReaderView: View {
                 Button { glasses.adjustDim(by: 0.1) } label: { Image(systemName: "moon") }
                     .accessibilityIdentifier(AID.glassesDimIncrease)
                 Button {
+                    glasses.adjustAutoScrollSpeed(by: -0.25)
+                } label: {
+                    Image(systemName: "tortoise")
+                }
+                .accessibilityIdentifier(AID.glassesSpeedDecrease)
+                Button {
                     glasses.toggleAutoScroll()
                 } label: {
                     Image(systemName: glasses.isAutoScrolling ? "pause.fill" : "play.fill")
                 }
                 .accessibilityIdentifier(AID.glassesAutoScrollToggle)
+                Button {
+                    glasses.adjustAutoScrollSpeed(by: 0.25)
+                } label: {
+                    Image(systemName: "hare")
+                }
+                .accessibilityIdentifier(AID.glassesSpeedIncrease)
                 // `BandLayout.isLongStrip` guesses this from page aspect and
                 // is right on everything measured so far, but it's still a
                 // guess over scraped content — this is how it gets corrected,
