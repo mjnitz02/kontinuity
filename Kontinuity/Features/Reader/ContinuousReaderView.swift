@@ -50,6 +50,8 @@ struct ContinuousReaderView: View {
     @State private var containerWidth: Double = 1
     @State private var progressTask: Task<Void, Never>?
     @State private var hasScrolledToStart = false
+    @State private var isScrubbing = false
+    @State private var scrubValue: Double = 0
 
     private var pageCount: Int {
         pageSources.count
@@ -190,12 +192,20 @@ struct ContinuousReaderView: View {
             if pageCount > 1 {
                 Slider(
                     value: Binding(
-                        get: { Double(currentPageIndex) },
-                        set: { newValue in scrollProxy.scrollTo(Int(newValue.rounded()), anchor: .top) }
+                        get: { isScrubbing ? scrubValue : Double(currentPageIndex) },
+                        set: { newValue in
+                            scrubValue = newValue
+                            scrollProxy.scrollTo(Int(newValue.rounded()), anchor: .top)
+                        }
                     ),
                     in: 0 ... Double(pageCount - 1),
                     step: 1
-                )
+                ) { editing in
+                    isScrubbing = editing
+                    if editing {
+                        scrubValue = Double(currentPageIndex)
+                    }
+                }
                 .padding()
                 .background(.ultraThinMaterial)
                 .accessibilityIdentifier(AID.readerScrubber)
