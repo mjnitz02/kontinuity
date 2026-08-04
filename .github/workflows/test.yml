@@ -24,12 +24,20 @@ jobs:
           xcode-version: latest-stable
 
       # The runner image's iPad lineup drifts between releases, so resolve a
-      # real device name instead of hardcoding one that may not exist.
+      # real device name instead of hardcoding one that may not exist. Prefer
+      # the 11-inch Pro (matches the Makefile default and Matt's physical
+      # device); fall back to whatever iPad is available otherwise. Newer
+      # runtimes disambiguate same-named iPads with a chip suffix like
+      # "(M5)", so that suffix must be kept, not stripped.
       - name: Pick an iPad simulator
         id: sim
         run: |
-          name=$(xcrun simctl list devices available \
-            | grep -oE 'iPad[^(]*' | head -1 | sed 's/ *$//')
+          devices=$(xcrun simctl list devices available)
+          name=$(echo "$devices" | grep -E 'iPad Pro 11-inch' | head -1)
+          if [ -z "$name" ]; then
+            name=$(echo "$devices" | grep -E 'iPad' | head -1)
+          fi
+          name=$(echo "$name" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/ \([0-9A-F-]+\) \([A-Za-z]+\)$//')
           echo "Using simulator: $name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
@@ -50,11 +58,17 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # See the unit job's step of the same name for why the chip suffix
+      # (e.g. "(M5)") must be kept and 11-inch Pro is preferred.
       - name: Pick an iPad simulator
         id: sim
         run: |
-          name=$(xcrun simctl list devices available \
-            | grep -oE 'iPad[^(]*' | head -1 | sed 's/ *$//')
+          devices=$(xcrun simctl list devices available)
+          name=$(echo "$devices" | grep -E 'iPad Pro 11-inch' | head -1)
+          if [ -z "$name" ]; then
+            name=$(echo "$devices" | grep -E 'iPad' | head -1)
+          fi
+          name=$(echo "$name" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/ \([0-9A-F-]+\) \([A-Za-z]+\)$//')
           echo "Using simulator: $name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 

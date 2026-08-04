@@ -7,6 +7,15 @@
 # the include silent when the file is absent (CI doesn't need it).
 -include Makefile.local
 
+# Pinned linter versions — downloaded straight from GitHub releases so
+# `make lint`/`make format-check` run the exact same binary locally and in
+# CI, instead of drifting with `brew upgrade`. Bump these deliberately.
+SWIFTFORMAT_VERSION := 0.62.1
+SWIFTLINT_VERSION   := 0.64.1
+TOOLS_DIR           := .tools/bin
+SWIFTFORMAT_BIN     := $(TOOLS_DIR)/swiftformat-$(SWIFTFORMAT_VERSION)
+SWIFTLINT_BIN       := $(TOOLS_DIR)/swiftlint-$(SWIFTLINT_VERSION)
+
 PROJECT        := Kontinuity.xcodeproj
 SCHEME         := Kontinuity
 UNIT_TARGET    := KontinuityTests
@@ -61,10 +70,33 @@ FORMATTER      := $(shell command -v xcbeautify >/dev/null 2>&1 && echo "| xcbea
 help:
 	@grep -hE '^## ' $(MAKEFILE_LIST) | sed 's/## //' | awk -F': ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-## install-tools: install SwiftLint + SwiftFormat (via Homebrew)
+## install-tools: fetch pinned SwiftLint + SwiftFormat, install xcbeautify (via Homebrew)
 .PHONY: install-tools
-install-tools:
-	brew install swiftlint swiftformat xcbeautify
+install-tools: $(SWIFTFORMAT_BIN) $(SWIFTLINT_BIN)
+	brew install xcbeautify
+
+# Universal macOS binary straight from the SwiftFormat release, not Homebrew —
+# Homebrew only ever offers the latest formula, which is what let CI and a
+# local install drift apart.
+$(SWIFTFORMAT_BIN):
+	@mkdir -p $(TOOLS_DIR)
+	curl -sL -o /tmp/swiftformat-$(SWIFTFORMAT_VERSION).zip \
+		https://github.com/nicklockwood/SwiftFormat/releases/download/$(SWIFTFORMAT_VERSION)/swiftformat.zip
+	unzip -p /tmp/swiftformat-$(SWIFTFORMAT_VERSION).zip swiftformat > $@
+	chmod +x $@
+	xattr -cr $@
+	@rm /tmp/swiftformat-$(SWIFTFORMAT_VERSION).zip
+
+# Same deal for SwiftLint — the "portable" release asset is the universal
+# macOS binary (the arm64/amd64-named zips are Windows builds, confusingly).
+$(SWIFTLINT_BIN):
+	@mkdir -p $(TOOLS_DIR)
+	curl -sL -o /tmp/swiftlint-$(SWIFTLINT_VERSION).zip \
+		https://github.com/realm/SwiftLint/releases/download/$(SWIFTLINT_VERSION)/portable_swiftlint.zip
+	unzip -p /tmp/swiftlint-$(SWIFTLINT_VERSION).zip swiftlint > $@
+	chmod +x $@
+	xattr -cr $@
+	@rm /tmp/swiftlint-$(SWIFTLINT_VERSION).zip
 
 ## install-hooks: enable the repo's git pre-commit hook
 .PHONY: install-hooks
@@ -74,18 +106,18 @@ install-hooks:
 
 ## lint: run SwiftLint (strict — warnings fail)
 .PHONY: lint
-lint:
-	swiftlint lint --strict
+lint: $(SWIFTLINT_BIN)
+	$(SWIFTLINT_BIN) lint --strict
 
 ## format: rewrite sources with SwiftFormat
 .PHONY: format
-format:
-	swiftformat .
+format: $(SWIFTFORMAT_BIN)
+	$(SWIFTFORMAT_BIN) .
 
 ## format-check: verify formatting without rewriting (used in CI)
 .PHONY: format-check
-format-check:
-	swiftformat --lint .
+format-check: $(SWIFTFORMAT_BIN)
+	$(SWIFTFORMAT_BIN) --lint .
 
 ## build: build the app for the simulator
 .PHONY: build

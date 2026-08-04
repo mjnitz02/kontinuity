@@ -68,7 +68,9 @@ extension SwiftDataTests {
             #expect(service.putCalls.map(\.page) == [3, 5])
         }
 
-        @Test("a completed book opens on page 1, not the stored (last) page — Komga's completion is implicit, so a Read book's stored page is always the last one")
+        @Test(
+            "a completed book opens on page 1 — Komga's stored page for a finished book is always the last one"
+        )
         func completedBookStartsOverAtPageOne() async throws {
             let context = try makeContext()
             let device = KomgaDevice(id: UUID(), name: "Test iPad")
@@ -122,7 +124,8 @@ extension SwiftDataTests {
                 settings: DownloadSettings(),
                 sessionConfiguration: .ephemeral
             )
-            let settings = try GlassesSettings(defaults: #require(UserDefaults(suiteName: "ReaderModelTests.setFlow.\(UUID())")))
+            let settings =
+                try GlassesSettings(defaults: #require(UserDefaults(suiteName: "ReaderModelTests.setFlow.\(UUID())")))
             let book = Self.book()
             let model = ReaderModel(
                 book: book,

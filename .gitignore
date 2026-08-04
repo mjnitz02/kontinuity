@@ -70,3 +70,6 @@ DerivedData/
 
 # Per-machine Makefile overrides (DEVICE_ID etc.)
 Makefile.local
+
+# Pinned SwiftLint/SwiftFormat binaries downloaded by `make install-tools`
+.tools/
