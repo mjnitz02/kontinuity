@@ -68,6 +68,48 @@ extension SwiftDataTests {
             #expect(service.putCalls.map(\.page) == [3, 5])
         }
 
+        @Test("a completed book opens on page 1, not the stored (last) page — Komga's completion is implicit, so a Read book's stored page is always the last one")
+        func completedBookStartsOverAtPageOne() async throws {
+            let context = try makeContext()
+            let device = KomgaDevice(id: UUID(), name: "Test iPad")
+            let service = RecordingKomgaService()
+            let sync = ProgressionSyncEngine(service: service, modelContext: context, device: device)
+            let downloads = DownloadCoordinator(
+                service: service,
+                modelContext: context,
+                settings: DownloadSettings(),
+                sessionConfiguration: .ephemeral
+            )
+            let book = Self.book(readProgress: KomgaReadProgress(page: 6, completed: true, readDate: .now))
+            let model = ReaderModel(book: book, service: service, sync: sync, downloads: downloads)
+
+            await model.load()
+
+            #expect(model.initialPageIndex == 0)
+            #expect(model.currentSpreadIndex == 0)
+        }
+
+        @Test("an in-progress book still resumes on its stored page")
+        func inProgressBookResumesAtStoredPage() async throws {
+            let context = try makeContext()
+            let device = KomgaDevice(id: UUID(), name: "Test iPad")
+            let service = RecordingKomgaService()
+            let sync = ProgressionSyncEngine(service: service, modelContext: context, device: device)
+            let downloads = DownloadCoordinator(
+                service: service,
+                modelContext: context,
+                settings: DownloadSettings(),
+                sessionConfiguration: .ephemeral
+            )
+            let book = Self.book(readProgress: KomgaReadProgress(page: 3, completed: false, readDate: .now))
+            let model = ReaderModel(book: book, service: service, sync: sync, downloads: downloads)
+
+            await model.load()
+
+            #expect(model.initialPageIndex == 2)
+            #expect(model.currentSpreadIndex == 2)
+        }
+
         @Test("setFlow updates the model and persists the per-series override, mirroring GlassesCoordinator.setFlow")
         func setFlowPersistsOverride() async throws {
             let context = try makeContext()
@@ -98,13 +140,14 @@ extension SwiftDataTests {
             #expect(settings.flowOverride(forSeries: book.seriesId) == .continuous)
         }
 
-        private static func book(pages: Int = 6) -> KomgaBook {
+        private static func book(pages: Int = 6, readProgress: KomgaReadProgress? = nil) -> KomgaBook {
             KomgaBook(
                 id: "b1",
                 seriesId: "s1",
                 name: "Book",
                 media: KomgaMedia(pagesCount: pages),
-                metadata: KomgaBookMetadata(title: "Book")
+                metadata: KomgaBookMetadata(title: "Book"),
+                readProgress: readProgress
             )
         }
     }

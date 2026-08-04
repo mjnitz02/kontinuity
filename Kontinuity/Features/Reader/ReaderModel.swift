@@ -188,7 +188,15 @@ final class ReaderModel {
     /// Resolves via the sync engine rather than trusting `book.readProgress`
     /// outright — that snapshot may be stale if this device has unsynced or
     /// conflicting local progress for the book (phase 4's whole point).
+    ///
+    /// A completed book always restarts at page 1 rather than resuming on its
+    /// stored page — Komga's completion is implicit (`position == pagesCount`,
+    /// KOMGA-API §4), so a "Read" book's stored page is the last page, and
+    /// resuming there is indistinguishable from never letting the reader move
+    /// past it (this is also what stranded the end-of-book advance: a "Read"
+    /// next book opened already at its own last spread).
     private func resolvedStartPageIndex() -> Int {
+        guard book.readState != .read else { return 0 }
         let resolvedPage = sync.resolvedStartPage(for: book) ?? book.readProgress?.page
         guard let page = resolvedPage, page > 1, pageCount > 0 else { return 0 }
         return min(page - 1, pageCount - 1)
