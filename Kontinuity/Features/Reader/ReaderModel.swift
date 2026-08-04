@@ -25,12 +25,23 @@ final class ReaderModel {
     private let sync: ProgressionSyncEngine
     private let downloads: DownloadCoordinator
     private let localStore = LocalBookStore()
+    private let glassesSettings = GlassesSettings()
 
     private(set) var pageSources: [PageSource] = []
     private(set) var spreads: [PageSpread] = []
     private(set) var loadError: String?
     private(set) var isLoading = true
     private(set) var nextBook: KomgaBook?
+    /// Whether Mode A renders the paging `TabView` or the continuous scroll
+    /// surface (PLAN §12) — resolved once at load time from
+    /// `BandLayout.resolvedFlow`, the same decision Mode B's
+    /// `GlassesCoordinator.enter()` makes, read off the same per-series
+    /// override so the two never disagree.
+    private(set) var flow: BandFlow = .perPage
+    /// The page continuous mode should open on — computed alongside
+    /// `currentSpreadIndex` from the same resolved start page, since a
+    /// continuous scroll has no spread to land on.
+    private(set) var initialPageIndex = 0
 
     private var localManifest: LocalBookManifest?
     private var remoteManifest: KomgaDivinaManifest?
@@ -86,7 +97,12 @@ final class ReaderModel {
 
     private func finishLoad() {
         recomputeSpreads()
-        currentSpreadIndex = initialSpreadIndex()
+        flow = BandLayout.resolvedFlow(
+            for: pageGeometries,
+            override: glassesSettings.flowOverride(forSeries: book.seriesId)
+        )
+        initialPageIndex = resolvedStartPageIndex()
+        currentSpreadIndex = spreads.firstIndex { $0.pageIndices.contains(initialPageIndex) } ?? 0
         hasLoadedInitialPosition = true
         isLoading = false
     }
@@ -153,11 +169,10 @@ final class ReaderModel {
     /// Resolves via the sync engine rather than trusting `book.readProgress`
     /// outright — that snapshot may be stale if this device has unsynced or
     /// conflicting local progress for the book (phase 4's whole point).
-    private func initialSpreadIndex() -> Int {
+    private func resolvedStartPageIndex() -> Int {
         let resolvedPage = sync.resolvedStartPage(for: book) ?? book.readProgress?.page
         guard let page = resolvedPage, page > 1, pageCount > 0 else { return 0 }
-        let pageIndex = min(page - 1, pageCount - 1)
-        return spreads.firstIndex { $0.pageIndices.contains(pageIndex) } ?? 0
+        return min(page - 1, pageCount - 1)
     }
 
     // MARK: - Progress
@@ -171,14 +186,16 @@ final class ReaderModel {
         recordProgress(pageIndex: lastPageIndex)
     }
 
-    /// Mode B's progression entry point (READER-DESIGN §5, PLAN 6B §C gap 1):
-    /// `ReaderView` calls this when `GlassesCoordinator.currentBandIndex`
-    /// reaches the **last** band of a page — bands don't correspond 1:1 with
-    /// `spreads`, so this bypasses `currentSpreadIndex` entirely rather than
-    /// trying to reverse-map a band into one. Shares `recordProgress` with
-    /// Mode A, so `lastSentPage` de-duplication covers both: re-entering a
-    /// page or stepping bands backward costs nothing extra.
-    func recordGlassesPageRead(pageIndex: Int) {
+    /// The progression entry point for both surfaces that have no discrete
+    /// page turn to hang `currentSpreadIndex.didSet` off of: Mode B
+    /// (READER-DESIGN §5, PLAN 6B §C gap 1), called when
+    /// `GlassesCoordinator.currentBandIndex` reaches the **last** band of a
+    /// page — bands don't correspond 1:1 with `spreads` — and Mode A's
+    /// continuous scroll surface (PLAN §12), called on a debounced scroll
+    /// offset. Shares `recordProgress` with the paged path, so `lastSentPage`
+    /// de-duplication covers all three: re-entering a page or scrolling
+    /// backward costs nothing extra.
+    func recordPageRead(pageIndex: Int) {
         recordProgress(pageIndex: pageIndex)
     }
 

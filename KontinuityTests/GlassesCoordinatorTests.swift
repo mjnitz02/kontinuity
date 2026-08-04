@@ -25,27 +25,53 @@ struct GlassesCoordinatorTests {
     /// BandLayoutTests' "H = 3x visibleH" case pins).
     private static let tall = PageGeometry(width: 800, height: 2400)
 
+    /// One ephemeral suite per test — Swift Testing builds a fresh instance of
+    /// this struct for each — so runs never bleed into each other or into the
+    /// real `.standard` domain.
+    private let settings: GlassesSettings
+
+    init() throws {
+        let name = "GlassesCoordinatorTests.\(UUID())"
+        settings = try GlassesSettings(defaults: #require(UserDefaults(suiteName: name)))
+    }
+
     private func makeCoordinator() -> GlassesCoordinator {
-        let defaults = UserDefaults(suiteName: "GlassesCoordinatorTests.\(UUID())")!
-        return GlassesCoordinator(settings: GlassesSettings(defaults: defaults))
+        GlassesCoordinator(settings: settings)
     }
 
     /// These tests only exercise the band-index/state math, not rendering —
     /// `pageSources`/`loader` are irrelevant to it, so this fills them with
     /// the minimum `enter()` now requires.
+    ///
+    /// `flow` is pinned via the persisted override *before* entering, rather
+    /// than left to `BandLayout.isLongStrip`, and has to be: a page needing
+    /// four bands on a *square* test screen is ~3x taller than it is wide,
+    /// i.e. unavoidably long-strip-shaped, so the per-page navigation tests
+    /// below would otherwise be silently testing continuous flow (PLAN §12).
     private func enter(
         _ coordinator: GlassesCoordinator,
         pages: [PageGeometry],
         startingPageIndex: Int = 0,
         screenWidth: Double,
-        screenHeight: Double
+        screenHeight: Double,
+        flow: BandFlow = .perPage
     ) {
+        settings.setFlowOverride(flow, forSeries: Self.seriesID)
         coordinator.enter(
+            content(pages: pages, seriesID: Self.seriesID),
+            startingPageIndex: startingPageIndex,
+            screenSize: CGSize(width: screenWidth, height: screenHeight)
+        )
+    }
+
+    private static let seriesID = "series-under-test"
+
+    private func content(pages: [PageGeometry], seriesID: String) -> GlassesContent {
+        GlassesContent(
             pageSources: [],
             pageGeometries: pages,
             loader: PageImageLoader(service: StubKomgaService()),
-            startingPageIndex: startingPageIndex,
-            screenSize: CGSize(width: screenWidth, height: screenHeight)
+            seriesID: seriesID
         )
     }
 
@@ -153,6 +179,53 @@ struct GlassesCoordinatorTests {
 
         coordinator.externalSceneDidDisconnect()
         #expect(!coordinator.isExternalSceneConnected)
+    }
+
+    @Test("enter() defaults the flow from page shape, and the toggle sticks for the whole series")
+    func flowDefaultsFromShapeAndOverrideSticks() {
+        let coordinator = makeCoordinator()
+
+        // `tall` is 3x taller than it is wide — long-strip shaped.
+        coordinator.enter(
+            content(pages: [Self.tall, Self.tall], seriesID: "series-a"),
+            startingPageIndex: 0,
+            screenSize: CGSize(width: 800, height: 800)
+        )
+        #expect(coordinator.flow == .continuous)
+
+        coordinator.toggleFlow()
+        #expect(coordinator.flow == .perPage)
+        #expect(settings.flowOverride(forSeries: "series-a") == .perPage)
+
+        // A different series is unaffected — the override is per series, not
+        // global, and `portrait` is paged-manga shaped anyway.
+        let other = GlassesCoordinator(settings: settings)
+        other.enter(
+            content(pages: [Self.portrait], seriesID: "series-b"),
+            startingPageIndex: 0,
+            screenSize: CGSize(width: 800, height: 800)
+        )
+        #expect(other.flow == .perPage)
+        #expect(settings.flowOverride(forSeries: "series-b") == nil)
+    }
+
+    @Test("a page swallowed whole by one continuous band still resumes at that band")
+    func swallowedPageResumesAtItsOwnBand() {
+        let coordinator = makeCoordinator()
+        // The middle page is short enough to fit inside a single band, so it
+        // is never that band's own `pageIndex`.
+        let short = PageGeometry(width: 800, height: 200)
+        enter(
+            coordinator,
+            pages: [Self.tall, short, Self.tall],
+            startingPageIndex: 1,
+            screenWidth: 800,
+            screenHeight: 800,
+            flow: .continuous
+        )
+        #expect(coordinator.bands[coordinator.currentBandIndex].touches(page: 1))
+        // Matching on the band's own page alone would have resumed at 0.
+        #expect(coordinator.currentBandIndex > 0)
     }
 
     @Test("any navigation keypress pauses auto-scroll, but toggling/adjusting it does not self-interrupt")

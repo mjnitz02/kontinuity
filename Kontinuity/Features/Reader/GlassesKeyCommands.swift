@@ -37,6 +37,7 @@ enum GlassesKey: Int, CaseIterable {
     case autoScrollSlower
     case autoScrollFaster
     case nextBook
+    case toggleFlow
 }
 
 /// One hardware key, its modifiers, and what Mode B does with it. File scope
@@ -134,7 +135,8 @@ struct GlassesKeyCommandCatcher: UIViewRepresentable {
             KeyBinding("a", [], .toggleAutoScroll),
             KeyBinding("-", [], .autoScrollSlower),
             KeyBinding("=", [], .autoScrollFaster),
-            KeyBinding("n", [], .nextBook)
+            KeyBinding("n", [], .nextBook),
+            KeyBinding("c", [], .toggleFlow)
         ]
     }
 }

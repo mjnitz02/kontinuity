@@ -2,10 +2,11 @@
 //  ReaderModelTests.swift
 //  KontinuityTests
 //
-//  Mode B's progression entry point (PLAN 6B §C gap 1, READER-DESIGN §5):
-//  `recordGlassesPageRead` shares `recordProgress`/`lastSentPage` with Mode
-//  A's `sendProgress`, so re-entering a page or stepping bands backward must
-//  cost nothing extra — the same guarantee `ProgressionSyncEngineTests`'s
+//  Mode B and Mode A's continuous surface both have no page turn to hang
+//  progression off of (PLAN 6B §C gap 1, READER-DESIGN §5, PLAN §12):
+//  `recordPageRead` shares `recordProgress`/`lastSentPage` with the paged
+//  `sendProgress`, so re-entering a page or stepping backward must cost
+//  nothing extra — the same guarantee `ProgressionSyncEngineTests`'s
 //  "coalesces" test proves for Mode A's own page turns.
 //
 
@@ -42,8 +43,8 @@ extension SwiftDataTests {
             return context
         }
 
-        @Test("recordGlassesPageRead sends once per distinct page — re-entering the same page is a no-op")
-        func recordGlassesPageReadDedupes() async throws {
+        @Test("recordPageRead sends once per distinct page — re-entering the same page is a no-op")
+        func recordPageReadDedupes() async throws {
             let context = try makeContext()
             let device = KomgaDevice(id: UUID(), name: "Test iPad")
             let service = RecordingKomgaService()
@@ -57,11 +58,11 @@ extension SwiftDataTests {
             let model = ReaderModel(book: Self.book(), service: service, sync: sync, downloads: downloads)
             await model.load()
 
-            model.recordGlassesPageRead(pageIndex: 2) // last band of page 3
+            model.recordPageRead(pageIndex: 2) // last band of page 3
             await sync.flush()
-            model.recordGlassesPageRead(pageIndex: 2) // re-entering page 3's last band: a true no-op
+            model.recordPageRead(pageIndex: 2) // re-entering page 3's last band: a true no-op
             await sync.flush()
-            model.recordGlassesPageRead(pageIndex: 4) // stepping on to page 5
+            model.recordPageRead(pageIndex: 4) // stepping on to page 5
             await sync.flush()
 
             #expect(service.putCalls.map(\.page) == [3, 5])

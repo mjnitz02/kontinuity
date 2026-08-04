@@ -42,9 +42,14 @@ struct GlassesReaderView: View {
                 Color.black.ignoresSafeArea()
 
                 if showsContent, let band = currentBand, let loader = glasses.loader {
-                    BandPageView(band: band, pageSources: glasses.pageSources, loader: loader)
-                        .ignoresSafeArea()
-                        .accessibilityIdentifier(AID.glassesSurface)
+                    BandPageView(
+                        band: band,
+                        pageSources: glasses.pageSources,
+                        pageGeometries: glasses.pageGeometries,
+                        loader: loader
+                    )
+                    .ignoresSafeArea()
+                    .accessibilityIdentifier(AID.glassesSurface)
                     // The dim overlay's spec (READER-DESIGN §3) is written for
                     // the true-external-display case, where the iPad panel is
                     // already solid black; in the fallback path the iPad panel
@@ -144,6 +149,12 @@ struct GlassesReaderView: View {
     private var statusText: String {
         guard !glasses.bands.isEmpty else { return "" }
         var parts = ["\(glasses.currentBandIndex + 1) / \(glasses.bands.count)"]
+        // Under a blanket the status line is the only feedback `C` gets — the
+        // chrome button isn't on screen and the band content itself shifts
+        // only subtly when the flow changes.
+        if glasses.flow == .continuous {
+            parts.append("strip")
+        }
         if glasses.isAutoScrolling {
             parts.append("auto")
         }
@@ -186,6 +197,16 @@ struct GlassesReaderView: View {
                     Image(systemName: glasses.isAutoScrolling ? "pause.fill" : "play.fill")
                 }
                 .accessibilityIdentifier(AID.glassesAutoScrollToggle)
+                // `BandLayout.isLongStrip` guesses this from page aspect and
+                // is right on everything measured so far, but it's still a
+                // guess over scraped content — this is how it gets corrected,
+                // and the correction sticks for the whole series (PLAN §12).
+                Button {
+                    glasses.toggleFlow()
+                } label: {
+                    Image(systemName: glasses.flow == .continuous ? "arrow.up.and.down" : "square.stack")
+                }
+                .accessibilityIdentifier(AID.glassesFlowToggle)
                 if isAtLastBand {
                     Button("Next volume", action: onNextBook)
                         .accessibilityIdentifier(AID.glassesNextBook)
@@ -217,7 +238,7 @@ struct GlassesReaderView: View {
         case .exit: onExit()
         case .nextBook: onNextBook()
         case .dimDecrease, .dimIncrease, .toggleAutoScroll,
-             .autoScrollSlower, .autoScrollFaster:
+             .autoScrollSlower, .autoScrollFaster, .toggleFlow:
             handleControl(key)
         }
     }
@@ -229,6 +250,7 @@ struct GlassesReaderView: View {
         case .toggleAutoScroll: glasses.toggleAutoScroll()
         case .autoScrollSlower: glasses.adjustAutoScrollSpeed(by: -0.25)
         case .autoScrollFaster: glasses.adjustAutoScrollSpeed(by: 0.25)
+        case .toggleFlow: glasses.toggleFlow()
         case .advanceBand, .retreatBand, .nextPage, .previousPage, .exit, .nextBook:
             break
         }

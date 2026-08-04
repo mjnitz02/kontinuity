@@ -29,6 +29,12 @@ struct ReaderView: View {
     @State private var chromeVisible = true
     @State private var containerSize: CGSize = .zero
     @State private var nextChapterPrompt: NextChapterPrompt?
+    /// The continuous surface's counterpart to `model.currentSpreadIndex` —
+    /// mirrored here (rather than left inside `ContinuousReaderView`) because
+    /// `enterGlassesMode()` needs to read it synchronously at the moment of
+    /// the tap, and because it has to survive a glasses round trip, which
+    /// tears down and rebuilds `ContinuousReaderView`'s own state.
+    @State private var continuousPageIndex = 0
 
     init(
         book: KomgaBook,
@@ -83,7 +89,7 @@ struct ReaderView: View {
         // 1): `GlassesCoordinator` must not learn about `ProgressionSyncEngine`
         // (PLAN's constraint), so this — the input surface mounted in every
         // Mode B configuration — is what maps a band reaching the last band
-        // of its page to `ReaderModel.recordGlassesPageRead`.
+        // of its page to `ReaderModel.recordPageRead`.
         .onChange(of: glasses.isActive) { _, active in
             if active {
                 handleGlassesBandChange(glasses.currentBandIndex)
@@ -92,6 +98,14 @@ struct ReaderView: View {
         .onChange(of: glasses.currentBandIndex) { _, newIndex in
             guard glasses.isActive else { return }
             handleGlassesBandChange(newIndex)
+        }
+        // Resets to the resolved resume page on every load — the first
+        // open, "Start Volume N", and glasses' own "N" all replace `model`
+        // and reload rather than mutating it in place.
+        .onChange(of: model.isLoading) { _, loading in
+            if !loading {
+                continuousPageIndex = model.initialPageIndex
+            }
         }
         // iPhone reader mode selection (PLAN 6B §B): compact height is
         // landscape on every iPhone and never true on an iPad, so this only
@@ -121,9 +135,31 @@ struct ReaderView: View {
             ProgressView().tint(.white)
         } else if let error = model.loadError {
             errorState(error)
+        } else if model.flow == .continuous {
+            continuousReader
         } else {
             reader
         }
+    }
+
+    /// Mode A's web-comic surface (PLAN §12, phase 9B) — a vertical scroll
+    /// replacing `reader`'s `TabView` for a book `ReaderModel.flow` resolved
+    /// as `.continuous`. Has no spread pairing, so `updateLayout`/rotation
+    /// handling below is a `reader`-only concern.
+    private var continuousReader: some View {
+        ContinuousReaderView(
+            pageSources: model.pageSources,
+            pageGeometries: model.pageGeometries,
+            loader: loader,
+            initialPageIndex: continuousPageIndex,
+            nextBook: model.nextBook,
+            currentPageIndex: $continuousPageIndex,
+            onPageRead: { model.recordPageRead(pageIndex: $0) },
+            onReachEnd: { Task { await model.loadNextBookIfNeeded() } },
+            onStartNextBook: openNextBook,
+            onDone: { dismiss() },
+            onEnterGlasses: enterGlassesMode
+        )
     }
 
     private var reader: some View {
@@ -289,9 +325,12 @@ struct ReaderView: View {
     /// (PLAN 6B §C): a rotation must not throw the reader back to page 1.
     private func enterGlassesMode() {
         glasses.enter(
-            pageSources: model.pageSources,
-            pageGeometries: model.pageGeometries,
-            loader: loader,
+            GlassesContent(
+                pageSources: model.pageSources,
+                pageGeometries: model.pageGeometries,
+                loader: loader,
+                seriesID: model.book.seriesId
+            ),
             startingPageIndex: currentLeadingPageIndex,
             screenSize: containerSize
         )
@@ -305,6 +344,10 @@ struct ReaderView: View {
     private func exitGlassesModeToMatchingPage() {
         let resumePageIndex = glasses.currentPageIndex
         glasses.exit()
+        if model.flow == .continuous {
+            continuousPageIndex = resumePageIndex
+            return
+        }
         guard let spreadIndex = model.spreads.firstIndex(where: { $0.pageIndices.contains(resumePageIndex) })
         else { return }
         model.currentSpreadIndex = spreadIndex
@@ -325,29 +368,40 @@ struct ReaderView: View {
         model = newModel
         await newModel.load()
         glasses.enter(
-            pageSources: newModel.pageSources,
-            pageGeometries: newModel.pageGeometries,
-            loader: loader,
+            GlassesContent(
+                pageSources: newModel.pageSources,
+                pageGeometries: newModel.pageGeometries,
+                loader: loader,
+                seriesID: newModel.book.seriesId
+            ),
             startingPageIndex: 0,
             screenSize: containerSize
         )
     }
 
-    /// Maps a band index to "did this just reach the last band of its page"
-    /// and, if so, records progress for that page — READER-DESIGN §5: "a page
-    /// counts as read... when its **last** band is reached", not its first,
-    /// so a book skimmed in glasses mode doesn't report pages never actually
-    /// seen.
+    /// Records progress for every page this band *completes* — READER-DESIGN
+    /// §5: "a page counts as read... when its **last** band is reached", not
+    /// its first, so a book skimmed in glasses mode doesn't report pages never
+    /// actually seen.
+    ///
+    /// Plural, not singular, because a `.continuous` band covers more than one
+    /// page (PLAN §12): a page short enough to be swallowed whole by a single
+    /// band is completed by the same band that completes the one before it,
+    /// and looking only at the band's own `pageIndex` would leave it
+    /// permanently unread.
     private func handleGlassesBandChange(_ index: Int) {
         let bands = glasses.bands
         guard bands.indices.contains(index) else { return }
-        let pageIndex = bands[index].pageIndex
-        let isLastBandOfPage = index + 1 >= bands.count || bands[index + 1].pageIndex != pageIndex
-        guard isLastBandOfPage else { return }
-        model.recordGlassesPageRead(pageIndex: pageIndex)
+        let next = bands.indices.contains(index + 1) ? bands[index + 1] : nil
+        for pageIndex in bands[index].pageIndices where next?.touches(page: pageIndex) != true {
+            model.recordPageRead(pageIndex: pageIndex)
+        }
     }
 
     private var currentLeadingPageIndex: Int {
+        if model.flow == .continuous {
+            return continuousPageIndex
+        }
         guard model.spreads.indices.contains(model.currentSpreadIndex) else { return 0 }
         return model.spreads[model.currentSpreadIndex].pageIndices.first ?? 0
     }

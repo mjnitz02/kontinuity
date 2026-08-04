@@ -30,6 +30,20 @@ import KontinuityCore
 import Observation
 import UIKit
 
+/// Everything Mode B needs to know about the book it's about to render,
+/// gathered into one value so `enter` reads as "this book, from here, at this
+/// size" rather than six loose arguments. Sourced entirely from the
+/// `ReaderModel` that's already open — glasses mode never re-fetches.
+@MainActor
+struct GlassesContent {
+    let pageSources: [PageSource]
+    let pageGeometries: [PageGeometry]
+    let loader: PageImageLoader
+    /// The per-series `BandFlow` override is keyed off this — a web comic is a
+    /// property of the series, not of one chapter.
+    let seriesID: String
+}
+
 @MainActor
 @Observable
 final class GlassesCoordinator {
@@ -54,9 +68,22 @@ final class GlassesCoordinator {
     private(set) var pageSources: [PageSource] = []
     private(set) var loader: PageImageLoader?
 
-    /// Retained so `updateGeometry(width:height:)` can recompute `bands`
-    /// against a new size without the caller re-supplying the manifest.
-    private var pageGeometries: [PageGeometry] = []
+    /// Retained so `updateGeometry(width:height:)` and `toggleFlow()` can
+    /// recompute `bands` without the caller re-supplying the manifest — and
+    /// read by both render targets, which size each page in a band off the
+    /// same geometry `BandLayout` banded against rather than off the decoded
+    /// image, so the two can't disagree.
+    private(set) var pageGeometries: [PageGeometry] = []
+    /// Likewise, so a flow toggle can recompute against the size the render
+    /// target last measured rather than the one `enter()` guessed.
+    private var screenSize: CGSize = .zero
+    private var seriesID: String?
+
+    /// Whether bands stop at page boundaries or run through them (PLAN §12).
+    /// Defaulted per book from `BandLayout.isLongStrip` and overridable per
+    /// series — a heuristic over scraped metadata gets to be a default, not a
+    /// verdict.
+    private(set) var flow: BandFlow = .perPage
 
     /// "Are glasses attached?" (READER-DESIGN §3's two-signals table) —
     /// bridged from `UIScreen.didConnectNotification`/
@@ -139,22 +166,17 @@ final class GlassesCoordinator {
     /// open page — rather than always band 0 of the book (gap 2, PLAN 6B
     /// §C): entering glasses mode, or auto-rotating into it on iPhone, must
     /// not throw the reader back to page 1.
-    func enter(
-        pageSources: [PageSource],
-        pageGeometries: [PageGeometry],
-        loader: PageImageLoader,
-        startingPageIndex: Int,
-        screenSize: CGSize
-    ) {
-        self.pageSources = pageSources
-        self.pageGeometries = pageGeometries
-        self.loader = loader
-        bands = BandLayout.bands(
-            for: pageGeometries,
-            screenWidth: screenSize.width,
-            screenHeight: screenSize.height,
-            overlap: settings.bandOverlap
+    func enter(_ content: GlassesContent, startingPageIndex: Int, screenSize: CGSize) {
+        pageSources = content.pageSources
+        pageGeometries = content.pageGeometries
+        loader = content.loader
+        seriesID = content.seriesID
+        self.screenSize = screenSize
+        flow = BandLayout.resolvedFlow(
+            for: content.pageGeometries,
+            override: settings.flowOverride(forSeries: content.seriesID)
         )
+        bands = computeBands()
         // Cleared before the assignment below so `prepareImagesForCurrentPage`
         // doesn't mistake a new book's page 0 for the outgoing book's.
         lastPreparedPageIndex = nil
@@ -169,14 +191,42 @@ final class GlassesCoordinator {
     /// band count per page changes with the geometry and a raw index would
     /// drift (READER-DESIGN §3's iPhone section).
     func updateGeometry(width: Double, height: Double) {
-        guard isActive, !bands.isEmpty else { return }
-        let position = currentPosition()
-        bands = BandLayout.bands(
+        guard isActive else { return }
+        screenSize = CGSize(width: width, height: height)
+        recomputeBandsPreservingPosition()
+    }
+
+    /// Corrects `BandLayout.isLongStrip`'s guess, and remembers the correction
+    /// for the whole series. Position-preserving in the same
+    /// (page, fraction-through-that-page) terms a rotation is, since the band
+    /// count per page changes here for exactly the same reason.
+    func setFlow(_ newFlow: BandFlow) {
+        flow = newFlow
+        if let seriesID {
+            settings.setFlowOverride(newFlow, forSeries: seriesID)
+        }
+        recomputeBandsPreservingPosition()
+    }
+
+    func toggleFlow() {
+        setFlow(flow == .continuous ? .perPage : .continuous)
+        registerKeyPress()
+    }
+
+    private func computeBands() -> [Band] {
+        guard screenSize.width > 0, screenSize.height > 0 else { return [] }
+        return BandLayout.bands(
             for: pageGeometries,
-            screenWidth: width,
-            screenHeight: height,
-            overlap: settings.bandOverlap
+            screenWidth: screenSize.width,
+            screenHeight: screenSize.height,
+            overlap: settings.bandOverlap,
+            flow: flow
         )
+    }
+
+    private func recomputeBandsPreservingPosition() {
+        let position = currentPosition()
+        bands = computeBands()
         currentBandIndex = bandIndex(forPage: position.pageIndex, fraction: position.fraction)
     }
 
@@ -189,15 +239,25 @@ final class GlassesCoordinator {
     }
 
     /// The page the current band belongs to — what Mode A resumes at when
-    /// leaving Mode B (`ReaderModel.recordGlassesPageRead`'s counterpart for
+    /// leaving Mode B (`ReaderModel.recordPageRead`'s counterpart for
     /// navigation rather than sync; the iPhone rotation round-trip reads
     /// this).
     var currentPageIndex: Int {
         bands.indices.contains(currentBandIndex) ? bands[currentBandIndex].pageIndex : 0
     }
 
+    /// Matched on *any* of a band's segments, not just its first page. Under
+    /// `.continuous` a page shorter than the band height can be swallowed
+    /// whole by one band and so never be any band's `pageIndex` — the
+    /// fixed-slice web comic's short remainder pages are exactly this — and
+    /// matching on `pageIndex` alone would resume such a page at band 0 of the
+    /// book instead of where it actually lives.
+    private func bandIndices(forPage pageIndex: Int) -> [Int] {
+        bands.indices.filter { bands[$0].touches(page: pageIndex) }
+    }
+
     private func firstBandIndex(forPage pageIndex: Int) -> Int {
-        bands.firstIndex { $0.pageIndex == pageIndex } ?? 0
+        bandIndices(forPage: pageIndex).first ?? 0
     }
 
     /// `(pageIndex, fraction)` where `fraction` is this band's position
@@ -207,14 +267,15 @@ final class GlassesCoordinator {
     private func currentPosition() -> (pageIndex: Int, fraction: Double) {
         guard bands.indices.contains(currentBandIndex) else { return (0, 0) }
         let pageIndex = bands[currentBandIndex].pageIndex
-        let bandsForPage = bands.indices.filter { bands[$0].pageIndex == pageIndex }
+        let bandsForPage = bandIndices(forPage: pageIndex)
         guard let start = bandsForPage.first, bandsForPage.count > 1 else { return (pageIndex, 0) }
         let fraction = Double(currentBandIndex - start) / Double(bandsForPage.count - 1)
         return (pageIndex, fraction)
     }
 
     private func bandIndex(forPage pageIndex: Int, fraction: Double) -> Int {
-        let indices = bands.indices.filter { bands[$0].pageIndex == pageIndex }
+        guard !bands.isEmpty else { return 0 }
+        let indices = bandIndices(forPage: pageIndex)
         guard let start = indices.first else { return min(currentBandIndex, bands.count - 1) }
         guard indices.count > 1 else { return start }
         return start + Int((fraction * Double(indices.count - 1)).rounded())

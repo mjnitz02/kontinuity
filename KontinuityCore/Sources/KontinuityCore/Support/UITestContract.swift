@@ -159,6 +159,10 @@ public enum AID {
     public static let readerDone = "reader.done"
     public static let readerPageLabel = "reader.pageLabel"
     public static let readerScrubber = "reader.scrubber"
+    /// Mode A's continuous/web-comic scroll surface (PLAN §12) — the vertical
+    /// `ScrollView` shown in place of `readerPage`'s `TabView` when the book
+    /// is long-strip.
+    public static let readerContinuousSurface = "reader.continuousSurface"
     /// The "swipe/tap again to continue" toast shown on the last page of a
     /// book (READER-DESIGN §2's Komga-style two-step advance).
     public static let readerNextChapterToast = "reader.nextChapterToast"
@@ -181,4 +185,7 @@ public enum AID {
     public static let glassesDimDecrease = "glasses.dimDecrease"
     public static let glassesDimIncrease = "glasses.dimIncrease"
     public static let glassesAutoScrollToggle = "glasses.autoScrollToggle"
+    /// Corrects `BandLayout.isLongStrip`'s per-page/continuous guess for the
+    /// whole series (PLAN §12).
+    public static let glassesFlowToggle = "glasses.flowToggle"
 }

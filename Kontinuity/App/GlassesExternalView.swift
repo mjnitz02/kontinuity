@@ -25,8 +25,13 @@ struct GlassesExternalView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let band = currentBand, let loader = glasses.loader {
-                BandPageView(band: band, pageSources: glasses.pageSources, loader: loader)
-                    .ignoresSafeArea()
+                BandPageView(
+                    band: band,
+                    pageSources: glasses.pageSources,
+                    pageGeometries: glasses.pageGeometries,
+                    loader: loader
+                )
+                .ignoresSafeArea()
             }
             Color.black.opacity(glasses.dimLevel).ignoresSafeArea()
         }
