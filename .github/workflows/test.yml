@@ -23,6 +23,19 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # The macos-26 runner image intermittently ships Xcode without the
+      # matching iOS Simulator runtime pre-installed (see
+      # https://github.com/actions/runner-images/issues/13220), which leaves
+      # zero simulator devices available for the "Pick an iPad simulator"
+      # step below to find, no matter what name it's looking for. Fetch the
+      # runtime on demand instead of failing the whole job.
+      - name: Ensure iOS Simulator runtime is installed
+        run: |
+          if ! xcrun simctl list devices available | grep -q "iPad"; then
+            echo "No iOS simulator runtime found — downloading it..."
+            sudo xcodebuild -downloadPlatform iOS
+          fi
+
       # The runner image's iPad lineup drifts between releases, so resolve a
       # real device name instead of hardcoding one that may not exist. Prefer
       # the 11-inch Pro (matches the Makefile default and Matt's physical
@@ -60,6 +73,14 @@ jobs:
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
+
+      # See the unit job's step of the same name for why this is needed.
+      - name: Ensure iOS Simulator runtime is installed
+        run: |
+          if ! xcrun simctl list devices available | grep -q "iPad"; then
+            echo "No iOS simulator runtime found — downloading it..."
+            sudo xcodebuild -downloadPlatform iOS
+          fi
 
       # See the unit job's step of the same name for why the chip suffix
       # (e.g. "(M5)") must be kept and 11-inch Pro is preferred.
