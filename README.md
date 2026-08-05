@@ -39,14 +39,16 @@ above.
 ## Development
 
 ```sh
-make install-tools     # swiftlint, swiftformat, xcbeautify
-make install-hooks     # pre-commit: format-check + lint
+make install-tools     # swiftlint, swiftformat, gitleaks, xcbeautify
+make install-hooks     # pre-commit: format-check + lint + secret scan
 make build             # build for the iPad simulator
 make test-unit         # the CI gate — hermetic, no server needed
 make test-ui           # XCUITest — boots a simulator, drives the app
 make test-all          # both suites
 make format            # rewrite sources
 make lint              # strict — warnings fail
+make secrets           # scan staged changes for leaked secrets (gitleaks)
+make secrets-scan      # scan full repo history for leaked secrets
 ```
 
 ### UI tests

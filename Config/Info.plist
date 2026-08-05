@@ -15,6 +15,18 @@
 	  addresses only — it does NOT open up arbitrary internet HTTP, which is the
 	  right trade. A server reached over the internet still has to be HTTPS.
 	-->
+	<!--
+	  Export compliance, declared here so App Store Connect stops asking on
+	  every TestFlight upload (the "App Encryption Documentation" prompt).
+	  false is the "None of the algorithms mentioned above" answer: the app
+	  implements no cryptography of its own — no CryptoKit, no bundled
+	  algorithm. It only *uses* what the OS provides (URLSession's TLS to the
+	  Komga server, the Keychain for the API key), which is exempt.
+	  Revisit this if the app ever ships its own crypto.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
