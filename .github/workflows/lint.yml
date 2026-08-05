@@ -14,16 +14,23 @@ concurrency:
 
 jobs:
   lint:
-    name: SwiftLint + SwiftFormat
+    name: SwiftLint + SwiftFormat + gitleaks
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # gitleaks scans history, not just the working tree.
+          fetch-depth: 0
 
-      # SwiftLint/SwiftFormat are pinned versions fetched by the Makefile
-      # itself (see SWIFTFORMAT_VERSION/SWIFTLINT_VERSION) — no separate
-      # install step, so CI can never drift from a local `make lint`.
+      # SwiftLint/SwiftFormat/gitleaks are pinned versions fetched by the
+      # Makefile itself (see SWIFTFORMAT_VERSION/SWIFTLINT_VERSION/
+      # GITLEAKS_VERSION) — no separate install step, so CI can never drift
+      # from a local `make lint`.
       - name: Check formatting
         run: make format-check
 
       - name: Lint
         run: make lint
+
+      - name: Scan for leaked secrets
+        run: make secrets-scan
