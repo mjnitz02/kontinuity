@@ -46,9 +46,12 @@ jobs:
 
   # Separate job: XCUITests boot a simulator and drive the real app, so they're
   # minutes rather than seconds. Keeping them off the unit job means a logic
-  # regression still reports fast.
+  # regression still reports fast. They're too slow to run on every PR push,
+  # so they're a post-merge validation only: skipped on `pull_request`, run
+  # on pushes to main.
   ui:
     name: UI tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
