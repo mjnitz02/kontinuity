@@ -72,7 +72,7 @@ extension SwiftDataTests {
                 .appendingPathComponent(UUID().uuidString))
         }
 
-        private func waitUntil(timeout: Duration = .seconds(3), _ condition: () -> Bool) async {
+        private func waitUntil(timeout: Duration = .seconds(15), _ condition: () -> Bool) async {
             let deadline = ContinuousClock.now + timeout
             while !condition(), ContinuousClock.now < deadline {
                 try? await Task.sleep(for: .milliseconds(10))

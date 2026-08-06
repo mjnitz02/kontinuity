@@ -20,6 +20,10 @@ GITLEAKS_BIN        := $(TOOLS_DIR)/gitleaks-$(GITLEAKS_VERSION)
 
 PROJECT        := Kontinuity.xcodeproj
 SCHEME         := Kontinuity
+# Unit-only scheme: its TestAction references just KontinuityTests, so
+# `xcodebuild test` doesn't also compile/link/sign the KontinuityUITests
+# target and its runner app — a build most test-unit runs never needed.
+UNIT_SCHEME    := Kontinuity-Unit
 UNIT_TARGET    := KontinuityTests
 UI_TARGET      := KontinuityUITests
 
@@ -235,7 +239,7 @@ testflight: archive
 .PHONY: test-unit test
 test-unit test:
 	set -o pipefail; $(XCODEBUILD) test \
-		-project $(PROJECT) -scheme $(SCHEME) \
+		-project $(PROJECT) -scheme $(UNIT_SCHEME) \
 		-destination '$(DESTINATION)' \
 		-only-testing:$(UNIT_TARGET) $(FORMATTER)
 
