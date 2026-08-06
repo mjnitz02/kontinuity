@@ -1,16 +1,26 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
+# Dependabot version updates.
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# The `swift` directory below must match the directory holding Package.swift.
+# It previously read /MemoryEchoCore — copied from the memory-echo repo — which
+# doesn't exist here, so Swift updates silently never ran. If the package is
+# ever moved or renamed, this path has to move with it.
 
 version: 2
 updates:
   - package-ecosystem: "swift"
-    directory: "/MemoryEchoCore"
+    directory: "/KontinuityCore"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      swift-dependencies:
+        patterns: ["*"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      github-actions:
+        patterns: ["*"]
