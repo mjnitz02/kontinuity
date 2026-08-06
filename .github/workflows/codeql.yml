@@ -25,7 +25,7 @@ jobs:
     name: Analyze Swift
     # Matches the runner in test.yml. Keep these two in step.
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       # Uploading results to the Security tab needs write here; everything
       # else stays read-only.
@@ -41,11 +41,43 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # See the matching step in test.yml for why this is needed.
+      - name: Ensure iOS Simulator runtime is installed
+        run: |
+          if ! xcrun simctl list devices available | grep -q "iPad"; then
+            echo "No iOS simulator runtime found — downloading it..."
+            sudo xcodebuild -downloadPlatform iOS
+          fi
+
+      # Same resolution logic as test.yml — the runner's iPad lineup drifts
+      # between images, so don't hardcode a device name.
+      - name: Pick an iPad simulator
+        id: sim
+        run: |
+          devices=$(xcrun simctl list devices available)
+          name=$(echo "$devices" | grep -E 'iPad Pro 11-inch' | head -1)
+          if [ -z "$name" ]; then
+            name=$(echo "$devices" | grep -E 'iPad' | head -1)
+          fi
+          name=$(echo "$name" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/ \([0-9A-F-]+\) \([A-Za-z]+\)$//')
+          echo "Using simulator: $name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      # build-mode: manual, not autobuild. Autobuild guesses `swift build
+      # --package-path KontinuityCore`, which compiles the package for the host
+      # (macOS) rather than iOS. Package.swift declares only `.iOS("26.0")`, so
+      # SwiftPM falls back to an ancient macOS deployment target and every
+      # SwiftData @Model expansion fails with "'Schema' is only available in
+      # macOS 14 or newer". Driving the real xcodebuild target instead analyzes
+      # what actually ships.
       - name: Initialize CodeQL
         uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:
           languages: swift
-          build-mode: autobuild
+          build-mode: manual
+
+      - name: Build for analysis
+        run: make build SIMULATOR_NAME="${{ steps.sim.outputs.name }}"
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
