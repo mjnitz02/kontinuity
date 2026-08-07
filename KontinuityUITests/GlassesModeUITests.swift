@@ -181,6 +181,48 @@ final class GlassesModeUITests: XCTestCase {
         )
     }
 
+    /// Auto mode's two-level state, end to end. What this pins is the bit the
+    /// old single-flag design got wrong: a page turn pauses the advance but
+    /// must *not* drop the reader out of the mode, because leaving the mode
+    /// means the only way back is the chrome — which covers the page you were
+    /// reading. The pill staying on screen through a page turn is the fix.
+    @MainActor
+    func testAutoModePillSurvivesAPageTurnAndPausesOnIt() {
+        enterGlassesMode()
+
+        // Chrome is visible on entry, so the toggle is reachable immediately.
+        app.find(AID.glassesAutoScrollToggle).assertAppears("The auto mode toggle").tap()
+
+        // The pill shows only once the chrome is out of the way — the centre
+        // half toggles it.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let pill = app.find(AID.glassesAutoScrollPill).assertAppears("The auto mode pill")
+        XCTAssertTrue(pill.value is String, "The pill carries its speed as an accessibility value")
+
+        // A forward page turn: pauses, but the pill stays put.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
+        XCTAssertTrue(
+            app.find(AID.glassesAutoScrollPill).exists,
+            "A page turn should pause auto mode, not leave it"
+        )
+
+        // And resuming is one tap on the pill, with no trip through the menu.
+        app.find(AID.glassesAutoScrollPlayPause).assertAppears("The pill's play/pause button").tap()
+        XCTAssertTrue(app.find(AID.glassesAutoScrollPill).exists, "The pill stays through a resume")
+
+        // The speed steps clamp at the ends of the ladder rather than wrapping,
+        // and the pill reports the step only as a tint — so its accessibility
+        // value is the one assertable record of which step is current.
+        app.find(AID.glassesSpeedIncrease).tap()
+        app.find(AID.glassesSpeedIncrease).tap()
+        app.find(AID.glassesSpeedIncrease).tap()
+        XCTAssertEqual(
+            app.find(AID.glassesAutoScrollPill).value as? String,
+            "1 second per band, playing",
+            "Three increases from the default should land on — and stay at — the fastest step"
+        )
+    }
+
     @MainActor
     private func enterGlassesMode() {
         app.find(AID.seriesCell(UITestFixture.inProgressSeriesID)).assertAppears("Windrunner's cell").tap()

@@ -34,10 +34,13 @@ enum GlassesKey: Int, CaseIterable {
     case dimDecrease
     case dimIncrease
     case toggleAutoScroll
+    case exitAutoMode
     case autoScrollSlower
     case autoScrollFaster
     case nextBook
     case toggleFlow
+    case widthFitDecrease
+    case widthFitIncrease
 }
 
 /// One hardware key, its modifiers, and what Mode B does with it. File scope
@@ -117,7 +120,8 @@ struct GlassesKeyCommandCatcher: UIViewRepresentable {
             onKey?(Self.bindings[index].key)
         }
 
-        /// READER-DESIGN §3's table, verbatim. `P` (previous volume) is the one
+        /// READER-DESIGN §3's table, plus `,`/`.` for the width fit, which
+        /// postdates that table. `P` (previous volume) is the one
         /// binding still missing: nothing in the app fetches a *previous* book
         /// yet, so it's left unbound rather than bound to a no-op.
         private static let bindings: [KeyBinding] = [
@@ -133,10 +137,13 @@ struct GlassesKeyCommandCatcher: UIViewRepresentable {
             KeyBinding("[", [], .dimDecrease),
             KeyBinding("]", [], .dimIncrease),
             KeyBinding("a", [], .toggleAutoScroll),
+            KeyBinding("a", .shift, .exitAutoMode),
             KeyBinding("-", [], .autoScrollSlower),
             KeyBinding("=", [], .autoScrollFaster),
             KeyBinding("n", [], .nextBook),
-            KeyBinding("c", [], .toggleFlow)
+            KeyBinding("c", [], .toggleFlow),
+            KeyBinding(",", [], .widthFitDecrease),
+            KeyBinding(".", [], .widthFitIncrease)
         ]
     }
 }

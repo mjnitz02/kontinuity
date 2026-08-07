@@ -3,7 +3,7 @@
 //  Kontinuity
 //
 //  The tunable knobs for Mode B (READER-DESIGN §3): dim overlay level,
-//  auto-scroll speed, the band-overlap fraction BandLayout uses, and the
+//  auto-scroll speed, the band overlap and width fit BandLayout uses, and the
 //  per-series continuous/per-page override (PLAN §12).
 //  `UserDefaults`-backed, mirroring `DownloadSettings` — tuned once in bed,
 //  kept every night, rather than reset back to defaults on every entry.
@@ -18,12 +18,20 @@ import KontinuityCore
 /// expression, which is evaluated in a synchronous nonisolated context.
 nonisolated struct GlassesSettings: Sendable {
     static let defaultDimLevel: Double = 0
-    static let defaultAutoScrollSpeed: Double = 1
-    static let defaultBandOverlap: Double = 0.08
+    static let defaultAutoScrollStep = 1
+    static let defaultBandOverlap = BandLayout.defaultOverlap
 
     private static let dimKey = "glasses.dimLevel"
-    private static let autoScrollSpeedKey = "glasses.autoScrollSpeed"
-    private static let bandOverlapKey = "glasses.bandOverlap"
+    /// Deliberately **not** the old `glasses.autoScrollSpeed` key: that one
+    /// held a Double multiplier over a 3s base and this holds an index into
+    /// `autoScrollIntervals`, so reusing it would read a stored 1.0 as step 1
+    /// by coincidence and a stored 0.25 as an out-of-range step.
+    private static let autoScrollStepKey = "glasses.autoScrollStep"
+    /// Deliberately **not** the old `glasses.bandOverlap` key: that one held a
+    /// fraction-of-a-band and this holds page-width units, so reusing it would
+    /// silently reinterpret a stored 0.08 as a huge overlap.
+    private static let bandOverlapKey = "glasses.bandOverlapWidths"
+    private static let widthFitKey = "glasses.bandWidthFit"
     private static let flowOverridesKey = "glasses.flowOverrides"
 
     /// UserDefaults isn't Sendable in this SDK but is documented thread-safe.
@@ -38,14 +46,36 @@ nonisolated struct GlassesSettings: Sendable {
         nonmutating set { defaults.set(newValue, forKey: Self.dimKey) }
     }
 
-    var autoScrollSpeed: Double {
-        get { defaults.object(forKey: Self.autoScrollSpeedKey) as? Double ?? Self.defaultAutoScrollSpeed }
-        nonmutating set { defaults.set(newValue, forKey: Self.autoScrollSpeedKey) }
+    /// An index into `GlassesCoordinator.autoScrollIntervals`, not a duration
+    /// — four coarse steps rather than a continuous dial, because the pill
+    /// signals the current one by colour alone and no one distinguishes
+    /// twenty colours through birdbath optics.
+    var autoScrollStep: Int {
+        get { defaults.object(forKey: Self.autoScrollStepKey) as? Int ?? Self.defaultAutoScrollStep }
+        nonmutating set { defaults.set(newValue, forKey: Self.autoScrollStepKey) }
     }
 
+    /// In page-width units — see `BandLayout.defaultOverlap` for why that's
+    /// the unit rather than a fraction of the band.
     var bandOverlap: Double {
         get { defaults.object(forKey: Self.bandOverlapKey) as? Double ?? Self.defaultBandOverlap }
         nonmutating set { defaults.set(newValue, forKey: Self.bandOverlapKey) }
+    }
+
+    /// `nil` — the default — means "derive it from the viewport's aspect"
+    /// (`BandLayout.widthFit(forViewportAspect:)`). A stored value is a
+    /// deliberate correction made from the reader's own chrome, and like
+    /// `dimLevel` it's the kind of thing tuned once in bed and kept, so it
+    /// outranks the automatic value from then on.
+    var bandWidthFit: Double? {
+        get { defaults.object(forKey: Self.widthFitKey) as? Double }
+        nonmutating set {
+            if let newValue {
+                defaults.set(newValue, forKey: Self.widthFitKey)
+            } else {
+                defaults.removeObject(forKey: Self.widthFitKey)
+            }
+        }
     }
 
     /// `nil` means "no one has corrected the auto-detection for this series"

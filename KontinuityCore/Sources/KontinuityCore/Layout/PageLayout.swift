@@ -202,32 +202,86 @@ public enum BandFlow: Sendable, Hashable {
 /// fit a 16:9 external display. Pure — no UIKit, no screen queried directly;
 /// the caller supplies the target size.
 public enum BandLayout {
+    /// The minimum content two consecutive bands share, **in units of the
+    /// page's own width** — 0.3 means "a strip three tenths of a page-width
+    /// tall is always visible in both bands".
+    ///
+    /// Page-width units, rather than the fraction-of-a-band this used to be,
+    /// because what the eye needs at a seam is a fixed amount of *artwork* —
+    /// a speech bubble, two or three lines of dialogue — and a bubble's size
+    /// scales with the page, not with the viewport. A fraction-of-band
+    /// overlap silently shrinks with the band: on an 11" iPad in landscape
+    /// the old 8%-of-band came out as 23% of the page repeated, while on an
+    /// iPhone in landscape — where the band is only a third of a page tall —
+    /// the same 8% came out as 9.5%, barely a line of text, which is why the
+    /// bottom of one band vanished when you stepped to the next. Expressed
+    /// this way one number gives every device the same amount of repeated
+    /// artwork, which on an iPad Pro 11 is exactly what it gave before.
+    ///
+    /// Page-*width* rather than page-height so the same number also means
+    /// something under `.continuous`, where there is no single page height to
+    /// be a fraction of and every page is normalised to width 1 anyway.
+    public static let defaultOverlap = 0.3
+
+    /// An overlap can never eat more than this share of a band, however tall
+    /// the page or short the band — without it a viewport shorter than
+    /// `minimumOverlap` would demand a step of zero and an unbounded band
+    /// count.
+    private static let maximumOverlapShareOfBand = 0.7
+
+    /// The fraction of the viewport's width the page is fit to; the rest is
+    /// black pillarbox either side. 1.0 is a true width fit.
+    ///
+    /// Anchored on 16:9, the glasses' own shape, because that is the aspect
+    /// this whole mode's band geometry was designed around: a viewport that
+    /// is *wider* than the glasses gets its page inset until the band it
+    /// shows is the same slice of page the glasses would show. An iPhone in
+    /// landscape is ~2.17:1, so it fits ~82% of its width and each band grows
+    /// from a third of the page to nearly half — which is where the overlap
+    /// has room to come from. Every iPad configuration is 16:9 or squarer and
+    /// so is untouched at 1.0, including the panel fallback the iPad reads in
+    /// today.
+    public static func widthFit(forViewportAspect aspect: Double) -> Double {
+        guard aspect > 16.0 / 9.0 else { return 1 }
+        return (16.0 / 9.0) / aspect
+    }
+
     /// Flattened across every page, in traversal order — `.rtl` reverses
     /// which page comes first, never the top-to-bottom order of bands
     /// within a page (same asymmetric rule `PageLayout.spreads` applies to
     /// pair order under `.rtl`).
+    ///
+    /// `minimumOverlap` is in page-width units (see `defaultOverlap`) and
+    /// `widthFit` insets the page within the viewport (see `widthFit(forViewportAspect:)`);
+    /// both defaults reproduce a plain full-width fit on a 16:9-or-squarer
+    /// screen.
     public static func bands(
         for pages: [PageGeometry],
         screenWidth: Double,
         screenHeight: Double,
-        overlap: Double = 0.08,
+        minimumOverlap: Double = defaultOverlap,
+        widthFit: Double = 1,
         progression: ReadingProgression = .ltr,
         flow: BandFlow = .perPage
     ) -> [Band] {
         let order = progression == .rtl ? Array(pages.indices.reversed()) : Array(pages.indices)
+        // Width-fit means the screen's own aspect *is* the visible height
+        // once a page is normalised to width 1 — inset by `widthFit`, which
+        // scales the page down and so shows more of it.
+        guard screenWidth > 0, widthFit > 0 else { return [] }
+        let visibleHeight = (screenHeight / screenWidth) / widthFit
         switch flow {
         case .perPage:
             return order.flatMap { index in
-                bandRects(for: pages[index], screenWidth: screenWidth, screenHeight: screenHeight, overlap: overlap)
+                bandRects(for: pages[index], visibleHeight: visibleHeight, minimumOverlap: minimumOverlap)
                     .map { Band(pageIndex: index, rect: $0) }
             }
         case .continuous:
             return continuousBands(
                 for: pages,
                 order: order,
-                screenWidth: screenWidth,
-                screenHeight: screenHeight,
-                overlap: overlap
+                visibleHeight: visibleHeight,
+                minimumOverlap: minimumOverlap
             )
         }
     }
@@ -279,31 +333,50 @@ public enum BandLayout {
     /// exactly on a page boundary rather than a sliver anyone could see.
     private static let boundaryEpsilon = 1e-9
 
+    /// `visibleHeight` and `minimumOverlap` are both in page-width units, so
+    /// this works against the page's normalised height rather than its pixel
+    /// height — the same coordinate space `stripBands` uses, which is what
+    /// lets the two share `steps(overTotalHeight:...)`.
     private static func bandRects(
         for page: PageGeometry,
-        screenWidth: Double,
-        screenHeight: Double,
-        overlap: Double
+        visibleHeight: Double,
+        minimumOverlap: Double
     ) -> [BandRect] {
         let wholePage = [wholePageRect]
         guard page.isKnown, !PageLayout.isDoubleSpread(page) else { return wholePage }
 
-        let scale = screenWidth / page.width
-        let visibleHeight = screenHeight / scale
+        let normalisedHeight = page.height / page.width
         // The page already fits — one band, whether it's shorter than the
         // band height or lands exactly on it.
-        guard visibleHeight < page.height else { return wholePage }
+        guard visibleHeight < normalisedHeight else { return wholePage }
 
-        let heightFraction = visibleHeight / page.height
-        // Evenly distributed rather than a fixed step, so the last band
-        // never ends up a stunted near-repeat of the one before it — every
-        // step is the same size and the overlap is at least the requested
-        // fraction everywhere.
-        let bandCount = Int(((page.height - visibleHeight) / (visibleHeight * (1 - overlap))).rounded(.up)) + 1
-        let step = (page.height - visibleHeight) / Double(bandCount - 1)
-        return (0 ..< bandCount).map { bandIndex in
-            BandRect(x: 0, y: Double(bandIndex) * step / page.height, width: 1, height: heightFraction)
+        let heightFraction = visibleHeight / normalisedHeight
+        return steps(
+            overTotalHeight: normalisedHeight,
+            visibleHeight: visibleHeight,
+            minimumOverlap: minimumOverlap
+        ).map { top in
+            BandRect(x: 0, y: top / normalisedHeight, width: 1, height: heightFraction)
         }
+    }
+
+    /// The top edge of every band over a run of `total` height, in the same
+    /// units as `visibleHeight`.
+    ///
+    /// Evenly distributed rather than a fixed step, so the last band never
+    /// ends up a stunted near-repeat of the one before it — every step is the
+    /// same size and the overlap is at least `minimumOverlap` everywhere.
+    /// Rounding the count up can only ever *increase* the overlap past what
+    /// was asked for, never shrink it below.
+    private static func steps(
+        overTotalHeight total: Double,
+        visibleHeight: Double,
+        minimumOverlap: Double
+    ) -> [Double] {
+        let overlap = min(max(minimumOverlap, 0), maximumOverlapShareOfBand * visibleHeight)
+        let bandCount = Int(((total - visibleHeight) / (visibleHeight - overlap)).rounded(.up)) + 1
+        let step = (total - visibleHeight) / Double(bandCount - 1)
+        return (0 ..< bandCount).map { Double($0) * step }
     }
 
     // MARK: - Continuous flow
@@ -322,26 +395,27 @@ public enum BandLayout {
     private static func continuousBands(
         for pages: [PageGeometry],
         order: [Int],
-        screenWidth: Double,
-        screenHeight: Double,
-        overlap: Double
+        visibleHeight: Double,
+        minimumOverlap: Double
     ) -> [Band] {
-        // Width-fit means the screen's own aspect *is* the visible height once
-        // every page is normalised to width 1.
-        let visibleHeight = screenHeight / screenWidth
         var result: [Band] = []
         var run: [Int] = []
 
         for index in order {
             guard pages[index].isKnown else {
-                result += stripBands(for: run, pages: pages, visibleHeight: visibleHeight, overlap: overlap)
+                result += stripBands(
+                    for: run,
+                    pages: pages,
+                    visibleHeight: visibleHeight,
+                    minimumOverlap: minimumOverlap
+                )
                 run = []
                 result.append(Band(pageIndex: index, rect: wholePageRect))
                 continue
             }
             run.append(index)
         }
-        result += stripBands(for: run, pages: pages, visibleHeight: visibleHeight, overlap: overlap)
+        result += stripBands(for: run, pages: pages, visibleHeight: visibleHeight, minimumOverlap: minimumOverlap)
         return result
     }
 
@@ -352,7 +426,7 @@ public enum BandLayout {
         for indices: [Int],
         pages: [PageGeometry],
         visibleHeight: Double,
-        overlap: Double
+        minimumOverlap: Double
     ) -> [Band] {
         guard !indices.isEmpty else { return [] }
         // Every page scaled to width 1, so a run whose pages differ in source
@@ -371,10 +445,7 @@ public enum BandLayout {
             return [Band(segments: indices.map { BandSegment(pageIndex: $0, rect: wholePageRect) })]
         }
 
-        let bandCount = Int(((total - visibleHeight) / (visibleHeight * (1 - overlap))).rounded(.up)) + 1
-        let step = (total - visibleHeight) / Double(bandCount - 1)
-        return (0 ..< bandCount).map { bandIndex in
-            let top = Double(bandIndex) * step
+        return steps(overTotalHeight: total, visibleHeight: visibleHeight, minimumOverlap: minimumOverlap).map { top in
             let segments = segments(
                 from: top,
                 to: top + visibleHeight,
