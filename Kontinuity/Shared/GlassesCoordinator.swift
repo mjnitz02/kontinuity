@@ -107,10 +107,28 @@ final class GlassesCoordinator {
         didSet { settings.dimLevel = dimLevel }
     }
 
-    var autoScrollSpeed: Double {
-        didSet { settings.autoScrollSpeed = autoScrollSpeed }
+    /// The four coarse speeds, in seconds per band. A ladder rather than a
+    /// continuous dial: the pill reports the current step by colour alone, and
+    /// four colours are tellable apart through the glasses where the old
+    /// twenty-value `0.25...5` multiplier never could have been.
+    static let autoScrollIntervals: [Double] = [4, 3, 2, 1]
+
+    /// Index into `autoScrollIntervals`.
+    var autoScrollStep: Int {
+        didSet { settings.autoScrollStep = autoScrollStep }
     }
 
+    var autoScrollInterval: Double {
+        Self.autoScrollIntervals[autoScrollStep]
+    }
+
+    /// Auto mode is two states, not one. `isAutoModeEnabled` means "the pill is
+    /// on screen and this is a mode I am in"; `isAutoScrolling` means "it is
+    /// advancing right now". Splitting them is what lets `interrupt()` — a page
+    /// turn, a chrome tap, any keypress — freeze the advance without throwing
+    /// the reader out of the mode, so resuming is one tap on the pill rather
+    /// than a round trip through the menu that covers the page.
+    private(set) var isAutoModeEnabled = false
     private(set) var isAutoScrolling = false
     private var autoScrollTask: Task<Void, Never>?
 
@@ -123,11 +141,13 @@ final class GlassesCoordinator {
     private(set) var lastKeyPressDate: Date?
     private var statusLineTask: Task<Void, Never>?
 
-    /// Set only by `adjustAutoScrollSpeed`, so the status line reads as "3.0s
-    /// / move" instead of the usual band-position text while a speed tap is
-    /// fresh — cleared by the same fade timer that hides the status line, so
-    /// it can never linger into an unrelated keypress.
-    private(set) var speedIndicatorText: String?
+    /// Set by the knobs whose effect isn't legible from the artwork alone —
+    /// `adjustAutoScrollSpeed` ("3.0s / move") and `adjustWidthFit`
+    /// ("82% width") — so the status line reports the new value instead of the
+    /// usual band position while the adjustment is fresh. Cleared by the same
+    /// fade timer that hides the status line, so it can never linger into an
+    /// unrelated keypress.
+    private(set) var statusIndicatorText: String?
 
     private let eventStream: AsyncStream<Bool>
     private let eventContinuation: AsyncStream<Bool>.Continuation
@@ -147,7 +167,7 @@ final class GlassesCoordinator {
     init(settings: GlassesSettings) {
         self.settings = settings
         dimLevel = settings.dimLevel
-        autoScrollSpeed = settings.autoScrollSpeed
+        autoScrollStep = min(Self.autoScrollIntervals.count - 1, max(0, settings.autoScrollStep))
         isGlassesAttached = Self.hasExternalScreen()
         (eventStream, eventContinuation) = AsyncStream<Bool>.makeStream()
         startScreenObserving()
@@ -219,13 +239,32 @@ final class GlassesCoordinator {
         registerKeyPress()
     }
 
+    /// How much of the render surface's width a page is fit to — read by both
+    /// render targets so the pixels they draw match the geometry `bands` was
+    /// computed against.
+    ///
+    /// Automatic from the viewport's aspect unless the reader has corrected
+    /// it from the chrome, and only while the panel is itself what's being
+    /// read: a real external display renders the bands computed here against
+    /// the *panel's* size, so insetting for a 2.17:1 phone would pillarbox a
+    /// 16:9 display for nothing. (That both surfaces share one band list
+    /// computed from the panel is a pre-existing simplification.)
+    var widthFit: Double {
+        if let stored = settings.bandWidthFit {
+            return stored
+        }
+        guard !isExternalSceneConnected, screenSize.height > 0 else { return 1 }
+        return BandLayout.widthFit(forViewportAspect: screenSize.width / screenSize.height)
+    }
+
     private func computeBands() -> [Band] {
         guard screenSize.width > 0, screenSize.height > 0 else { return [] }
         return BandLayout.bands(
             for: pageGeometries,
             screenWidth: screenSize.width,
             screenHeight: screenSize.height,
-            overlap: settings.bandOverlap,
+            minimumOverlap: settings.bandOverlap,
+            widthFit: widthFit,
             flow: flow
         )
     }
@@ -238,6 +277,7 @@ final class GlassesCoordinator {
 
     func exit() {
         isActive = false
+        isAutoModeEnabled = false
         isAutoScrolling = false
         autoScrollTask?.cancel()
         statusLineTask?.cancel()
@@ -367,10 +407,49 @@ final class GlassesCoordinator {
         interrupt()
     }
 
-    /// A and -/= are auto-scroll's own controls, so — unlike every other key
-    /// — they don't pause it via `interrupt()`; only `registerKeyPress()`
-    /// for the status line.
-    func toggleAutoScroll() {
+    /// The reader's own correction to the automatic width fit — the knob for
+    /// "trade a little page size for taller bands", which is the trade that
+    /// buys overlap on a phone. Recomputes bands in the same
+    /// (page, fraction-through-that-page) terms a rotation does, since the
+    /// band count per page changes here for exactly the same reason.
+    ///
+    /// Floored at 0.5 rather than 0: below about half width the page is
+    /// smaller than the phone would ever render it in Mode A, at which point
+    /// the mode isn't doing its job.
+    func adjustWidthFit(by delta: Double) {
+        settings.bandWidthFit = min(1, max(0.5, widthFit + delta))
+        recomputeBandsPreservingPosition()
+        registerKeyPress(indicator: String(format: "%.0f%% width", widthFit * 100))
+    }
+
+    /// The chrome's one auto-mode button, and `A`. Entering the mode starts it
+    /// moving straight away — the reader's next act is closing the menu, and
+    /// having to then find the pill's play button to get going would be the
+    /// same two-step the pill exists to remove. Leaving it stops the advance
+    /// and takes the pill off screen.
+    func toggleAutoMode() {
+        setAutoMode(!isAutoModeEnabled)
+    }
+
+    func setAutoMode(_ enabled: Bool) {
+        isAutoModeEnabled = enabled
+        isAutoScrolling = enabled
+        registerKeyPress()
+        if enabled {
+            startAutoScrollLoop()
+        } else {
+            autoScrollTask?.cancel()
+        }
+    }
+
+    /// The pill's centre button: play/pause *within* the mode, which is the
+    /// distinction `isAutoModeEnabled` exists to hold. Pressing play while auto
+    /// mode is off turns it on, so the keyboard's `A` needs no separate enable.
+    func toggleAutoScrollPlayback() {
+        guard isAutoModeEnabled else {
+            setAutoMode(true)
+            return
+        }
         isAutoScrolling.toggle()
         registerKeyPress()
         if isAutoScrolling {
@@ -380,9 +459,12 @@ final class GlassesCoordinator {
         }
     }
 
-    func adjustAutoScrollSpeed(by delta: Double) {
-        autoScrollSpeed = min(5, max(0.25, autoScrollSpeed + delta))
-        registerKeyPress(speedIndicator: String(format: "%.1fs / move", 3.0 / autoScrollSpeed))
+    /// The pill's -/+ and the `-`/`=` keys. Unlike every other control these
+    /// don't `interrupt()`: adjusting the speed of a thing that is running
+    /// shouldn't stop it.
+    func adjustAutoScrollStep(by delta: Int) {
+        autoScrollStep = min(Self.autoScrollIntervals.count - 1, max(0, autoScrollStep + delta))
+        registerKeyPress()
         // Restart at the new interval immediately rather than waiting out
         // whatever's left of the old one.
         if isAutoScrolling {
@@ -393,10 +475,10 @@ final class GlassesCoordinator {
     /// "Slow continuous pan, speed adjustable" (READER-DESIGN §3) —
     /// approximated as a fixed-interval band advance, inversely proportional
     /// to speed, rather than true sub-band scrolling; simpler, and the
-    /// bands' own ~8% overlap already keeps the step from reading as a jump.
+    /// bands' own overlap already keeps the step from reading as a jump.
     private func startAutoScrollLoop() {
         autoScrollTask?.cancel()
-        let interval = 3.0 / autoScrollSpeed
+        let interval = autoScrollInterval
         autoScrollTask = Task {
             while isAutoScrolling, !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(interval))
@@ -407,8 +489,10 @@ final class GlassesCoordinator {
     }
 
     /// Doesn't call `interrupt()` — a tick isn't a keypress and shouldn't
-    /// pause itself — and stops cleanly at the last band rather than
-    /// wrapping back to the start.
+    /// pause itself — and parks at the last band rather than wrapping back to
+    /// the start. Parking *paused rather than disabled* is the point: the
+    /// reader takes the next volume and presses play again, with the pill
+    /// never having left the screen.
     private func autoAdvance() {
         guard currentBandIndex + 1 < bands.count else {
             isAutoScrolling = false
@@ -418,22 +502,25 @@ final class GlassesCoordinator {
         currentBandIndex += 1
     }
 
-    private func registerKeyPress(speedIndicator: String? = nil) {
+    private func registerKeyPress(indicator: String? = nil) {
         lastKeyPressDate = .now
         isStatusLineVisible = true
-        speedIndicatorText = speedIndicator
+        statusIndicatorText = indicator
         statusLineTask?.cancel()
         statusLineTask = Task {
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
             isStatusLineVisible = false
-            speedIndicatorText = nil
+            statusIndicatorText = nil
         }
     }
 
-    /// Any keypress other than auto-scroll's own controls pauses it
-    /// (READER-DESIGN §3: "any keypress pauses").
-    private func interrupt() {
+    /// Any input other than auto-scroll's own controls pauses it
+    /// (READER-DESIGN §3: "any keypress pauses") — but only pauses. Auto mode
+    /// stays enabled, so a page turn, a dim nudge or opening the chrome
+    /// freezes the advance where it stands and leaves the pill sitting there
+    /// ready to resume from whatever band the reader ended up on.
+    func interrupt() {
         registerKeyPress()
         if isAutoScrolling {
             isAutoScrolling = false
@@ -494,12 +581,21 @@ final class GlassesCoordinator {
     /// `AppDelegate`'s static handoff — the only signal that a real,
     /// independent external surface exists rather than a mirror of the iPad
     /// panel (gap 4, PLAN 6B §C).
+    /// Recomputes for the same reason a rotation does: gaining or losing the
+    /// external surface changes `widthFit`, and so the band geometry.
     func externalSceneDidConnect() {
         isExternalSceneConnected = true
+        recomputeBandsIfActive()
     }
 
     /// Called by `GlassesSceneDelegate.sceneDidDisconnect(_:)`.
     func externalSceneDidDisconnect() {
         isExternalSceneConnected = false
+        recomputeBandsIfActive()
+    }
+
+    private func recomputeBandsIfActive() {
+        guard isActive else { return }
+        recomputeBandsPreservingPosition()
     }
 }

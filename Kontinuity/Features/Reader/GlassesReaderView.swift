@@ -36,6 +36,11 @@ struct GlassesReaderView: View {
     /// `ReaderView`'s own default.
     @State private var chromeVisible = true
 
+    /// Measured rather than guessed so the status line can clear the chrome
+    /// toolbar — see `statusLine`, where not clearing it was the whole reason
+    /// the speed indicator never appeared to work.
+    @State private var chromeToolbarHeight: CGFloat = 0
+
     var body: some View {
         GeometryReader { proxy in
             ZStack {
@@ -46,7 +51,8 @@ struct GlassesReaderView: View {
                         band: band,
                         pageSources: glasses.pageSources,
                         pageGeometries: glasses.pageGeometries,
-                        loader: loader
+                        loader: loader,
+                        widthFit: glasses.widthFit
                     )
                     .ignoresSafeArea()
                     .accessibilityIdentifier(AID.glassesSurface)
@@ -65,6 +71,17 @@ struct GlassesReaderView: View {
 
                 if glasses.isStatusLineVisible {
                     statusLine
+                }
+
+                // Auto mode's controls belong on the reading surface, so they
+                // show precisely when the chrome doesn't — the chrome covers
+                // the page, and a control you can only reach by covering the
+                // page is the arrangement this replaces.
+                if showsContent, glasses.isAutoModeEnabled, !chromeVisible {
+                    AutoScrollPill(glasses: glasses)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(24)
+                        .transition(.opacity)
                 }
 
                 if showsContent, chromeVisible {
@@ -100,12 +117,21 @@ struct GlassesReaderView: View {
                 Color.clear
                     .frame(width: proxy.size.width / 2)
                     .contentShape(Rectangle())
-                    .onTapGesture { withAnimation { chromeVisible.toggle() } }
+                    .onTapGesture { toggleChrome() }
                 tapZone(width: proxy.size.width / 4, action: advanceOrNextBook)
             }
             .contentShape(Rectangle())
             .gesture(swipeGesture)
         }
+    }
+
+    /// Opening the chrome pauses the advance, the same as any other touch:
+    /// the toolbar is opaque, so bands stepping on underneath it are bands
+    /// nobody read. `interrupt()` only pauses — auto mode stays on, and the
+    /// pill comes back paused when the chrome closes, one tap from resuming.
+    private func toggleChrome() {
+        glasses.interrupt()
+        withAnimation { chromeVisible.toggle() }
     }
 
     private func tapZone(width: CGFloat, action: @escaping () -> Void) -> some View {
@@ -151,13 +177,22 @@ struct GlassesReaderView: View {
         }
     }
 
+    /// The bug this padding fixes: `statusLine` and `chrome` are siblings in
+    /// the same `ZStack`, both bottom-anchored, and `chrome` draws second — so
+    /// its material toolbar painted straight over this text. Every control
+    /// whose effect isn't legible from the artwork alone (width fit, and the
+    /// speed buttons that used to live there) reported into a label the
+    /// toolbar was covering, which is why adjusting them looked like it did
+    /// nothing at all. Sitting the line above the measured toolbar costs the
+    /// reader nothing when the chrome is closed and is the difference between
+    /// feedback and no feedback when it's open.
     private var statusLine: some View {
         VStack {
             Spacer()
-            Text(glasses.speedIndicatorText ?? statusText)
+            Text(glasses.statusIndicatorText ?? statusText)
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.6))
-                .padding(.bottom, 24)
+                .padding(.bottom, chromeVisible ? chromeToolbarHeight + 12 : 24)
                 .accessibilityIdentifier(AID.glassesStatusLabel)
         }
         .transition(.opacity)
@@ -172,9 +207,9 @@ struct GlassesReaderView: View {
         if glasses.flow == .continuous {
             parts.append("strip")
         }
-        if glasses.isAutoScrolling {
-            parts.append("auto")
-        }
+        // No "auto" token any more: `AutoScrollPill` is on screen for as long
+        // as the mode is, and says both whether it's running and how fast,
+        // which is strictly more than this ever did and doesn't fade out.
         return parts.joined(separator: " · ")
     }
 
@@ -208,24 +243,17 @@ struct GlassesReaderView: View {
                     .accessibilityIdentifier(AID.glassesDimDecrease)
                 Button { glasses.adjustDim(by: 0.1) } label: { Image(systemName: "moon") }
                     .accessibilityIdentifier(AID.glassesDimIncrease)
+                // One button, not three. Play/pause and the two speed steps
+                // moved to `AutoScrollPill`, where they're reachable without
+                // covering the page; all that's left here is entering and
+                // leaving the mode, which is a thing you do once per sitting.
                 Button {
-                    glasses.adjustAutoScrollSpeed(by: -0.25)
+                    glasses.toggleAutoMode()
                 } label: {
-                    Image(systemName: "tortoise")
+                    Image(systemName: glasses.isAutoModeEnabled ? "a.circle.fill" : "a.circle")
                 }
-                .accessibilityIdentifier(AID.glassesSpeedDecrease)
-                Button {
-                    glasses.toggleAutoScroll()
-                } label: {
-                    Image(systemName: glasses.isAutoScrolling ? "pause.fill" : "play.fill")
-                }
+                .accessibilityLabel(glasses.isAutoModeEnabled ? "Disable auto mode" : "Enable auto mode")
                 .accessibilityIdentifier(AID.glassesAutoScrollToggle)
-                Button {
-                    glasses.adjustAutoScrollSpeed(by: 0.25)
-                } label: {
-                    Image(systemName: "hare")
-                }
-                .accessibilityIdentifier(AID.glassesSpeedIncrease)
                 // `BandLayout.isLongStrip` guesses this from page aspect and
                 // is right on everything measured so far, but it's still a
                 // guess over scraped content — this is how it gets corrected,
@@ -236,6 +264,14 @@ struct GlassesReaderView: View {
                     Image(systemName: glasses.flow == .continuous ? "arrow.up.and.down" : "square.stack")
                 }
                 .accessibilityIdentifier(AID.glassesFlowToggle)
+                // Narrower page, taller band, more overlap — the trade that
+                // makes a phone in landscape readable, and the one thing here
+                // whose right value is a matter of eyesight rather than
+                // geometry, so it's a dial rather than a constant.
+                Button { glasses.adjustWidthFit(by: -0.05) } label: { Image(systemName: "minus.magnifyingglass") }
+                    .accessibilityIdentifier(AID.glassesWidthFitDecrease)
+                Button { glasses.adjustWidthFit(by: 0.05) } label: { Image(systemName: "plus.magnifyingglass") }
+                    .accessibilityIdentifier(AID.glassesWidthFitIncrease)
                 if isAtLastBand {
                     Button("Next volume", action: onNextBook)
                         .accessibilityIdentifier(AID.glassesNextBook)
@@ -243,6 +279,7 @@ struct GlassesReaderView: View {
             }
             .padding()
             .background(.ultraThinMaterial)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chromeToolbarHeight = $0 }
         }
         .buttonStyle(.bordered)
         .tint(.white)
@@ -266,8 +303,9 @@ struct GlassesReaderView: View {
         case .previousPage: glasses.previousPage()
         case .exit: onExit()
         case .nextBook: onNextBook()
-        case .dimDecrease, .dimIncrease, .toggleAutoScroll,
-             .autoScrollSlower, .autoScrollFaster, .toggleFlow:
+        case .dimDecrease, .dimIncrease, .toggleAutoScroll, .exitAutoMode,
+             .autoScrollSlower, .autoScrollFaster, .toggleFlow,
+             .widthFitDecrease, .widthFitIncrease:
             handleControl(key)
         }
     }
@@ -276,10 +314,17 @@ struct GlassesReaderView: View {
         switch key {
         case .dimDecrease: glasses.adjustDim(by: -0.1)
         case .dimIncrease: glasses.adjustDim(by: 0.1)
-        case .toggleAutoScroll: glasses.toggleAutoScroll()
-        case .autoScrollSlower: glasses.adjustAutoScrollSpeed(by: -0.25)
-        case .autoScrollFaster: glasses.adjustAutoScrollSpeed(by: 0.25)
+        // `A` is play/pause, and enters auto mode if it isn't on — the
+        // keyboard's equivalent of the pill's centre button. `⇧A` is the way
+        // back out, since the keyboard reader's pill is an indicator that
+        // otherwise never leaves.
+        case .toggleAutoScroll: glasses.toggleAutoScrollPlayback()
+        case .exitAutoMode: glasses.setAutoMode(false)
+        case .autoScrollSlower: glasses.adjustAutoScrollStep(by: -1)
+        case .autoScrollFaster: glasses.adjustAutoScrollStep(by: 1)
         case .toggleFlow: glasses.toggleFlow()
+        case .widthFitDecrease: glasses.adjustWidthFit(by: -0.05)
+        case .widthFitIncrease: glasses.adjustWidthFit(by: 0.05)
         case .advanceBand, .retreatBand, .nextPage, .previousPage, .exit, .nextBook:
             break
         }

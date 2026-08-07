@@ -29,11 +29,23 @@ struct GlassesExternalView: View {
                     band: band,
                     pageSources: glasses.pageSources,
                     pageGeometries: glasses.pageGeometries,
-                    loader: loader
+                    loader: loader,
+                    widthFit: glasses.widthFit
                 )
                 .ignoresSafeArea()
             }
             Color.black.opacity(glasses.dimLevel).ignoresSafeArea()
+
+            // Above the dim overlay deliberately: it's a status readout, and
+            // dimming it along with the artwork would defeat the point at
+            // exactly the dim levels a dark room wants. Non-interactive here
+            // — this scene can never be key, so the reader drives it from the
+            // keyboard and only *reads* this.
+            if glasses.isAutoModeEnabled {
+                AutoScrollPill(glasses: glasses, isInteractive: false)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(24)
+            }
         }
     }
 

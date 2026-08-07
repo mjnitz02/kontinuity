@@ -8,6 +8,12 @@
 //  (`BandLayout` normalises every page to width 1), so positioning is a plain
 //  SwiftUI stack/offset/clip, not a pixel-level `CGImage` crop — no new
 //  image-decoding path, just `PageImageLoader`'s existing cache plus geometry.
+//  `widthFit` insets that fit within the container, pillarboxing the page: on
+//  a viewport wider than 16:9 — an iPhone in landscape — a full-width fit
+//  makes each band a sliver of the page, and two consecutive slivers barely
+//  overlap.
+//  It's passed in rather than recomputed here because `BandLayout` banded
+//  against it; the two must be the same number.
 //
 //  Held images are keyed by the page they belong to, and only ever drawn for a
 //  segment on that same page. That's what keeps a page boundary from flashing:
@@ -32,6 +38,10 @@ struct BandPageView: View {
     let pageSources: [PageSource]
     let pageGeometries: [PageGeometry]
     let loader: PageImageLoader
+    /// The fraction of the container's width the page is fit to, pillarboxed
+    /// either side — `BandLayout`'s `widthFit`, which must be the same number
+    /// here or the band on screen wouldn't be the band that was computed.
+    var widthFit: Double = 1
 
     @State private var loaded = LoadedPages()
 
@@ -52,8 +62,9 @@ struct BandPageView: View {
             ZStack {
                 Color.black
                 if loaded.images[band.pageIndex] != nil {
-                    strip(width: proxy.size.width)
-                        .offset(y: -band.rect.y * scaledHeight(ofPage: band.pageIndex, width: proxy.size.width))
+                    let pageWidth = proxy.size.width * CGFloat(widthFit)
+                    strip(width: pageWidth)
+                        .offset(y: -band.rect.y * scaledHeight(ofPage: band.pageIndex, width: pageWidth))
                         .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
                         .clipped()
                 } else {

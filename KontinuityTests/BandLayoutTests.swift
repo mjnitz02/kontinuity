@@ -40,7 +40,7 @@ struct BandLayoutTests {
     func evenDistributionNoOverrun() {
         // width-fit scale = screenWidth/800 = 1, so visibleHeight = screenHeight
         // directly. screenHeight 400 = a third of the 1200-tall page.
-        let bands = BandLayout.bands(for: [Self.portrait], screenWidth: 800, screenHeight: 400, overlap: 0.08)
+        let bands = BandLayout.bands(for: [Self.portrait], screenWidth: 800, screenHeight: 400, minimumOverlap: 0.1)
         #expect(bands.allSatisfy { $0.pageIndex == 0 })
         let ys = bands.map(\.rect.y)
         #expect(bands.count == 4)
@@ -49,11 +49,13 @@ struct BandLayoutTests {
         for step in steps.dropFirst() {
             #expect(abs(step - steps[0]) < 0.0001)
         }
-        // The overlap between consecutive bands is at least the requested 8%.
+        // Every seam repeats at least the requested 0.1 page-widths of
+        // artwork. `rect` is fractional page-space, so converting back to
+        // page-width units means scaling by the page's normalised height.
+        let normalisedHeight = Self.portrait.height / Self.portrait.width
         let heightFraction = bands[0].rect.height
         for step in steps {
-            let overlapFraction = (heightFraction - step) / heightFraction
-            #expect(overlapFraction >= 0.08 - 0.0001)
+            #expect((heightFraction - step) * normalisedHeight >= 0.1 - 0.0001)
         }
         // The last band ends exactly at the bottom of the page, no gap or overrun.
         let last = bands[bands.count - 1]
@@ -70,6 +72,78 @@ struct BandLayoutTests {
     func unknownDimensionsDegradeToOneBand() {
         let bands = BandLayout.bands(for: [Self.unknown], screenWidth: 800, screenHeight: 50)
         #expect(bands == [Band(pageIndex: 0, rect: BandRect(x: 0, y: 0, width: 1, height: 1))])
+    }
+
+    /// The bug this suite's overlap unit exists for. Measured on a real page
+    /// from the dev library (1200x1722) against the two viewports actually
+    /// read on: an 11" iPad in landscape, which was fine, and an iPhone 16 Pro
+    /// in landscape, which was not. Under the old fraction-of-a-band overlap
+    /// the iPad repeated 23% of the page at each seam and the phone repeated
+    /// 9.5% — a line of text, so the bottom of one band effectively vanished
+    /// on stepping to the next.
+    @Suite("overlap is the same amount of artwork on every device")
+    struct OverlapParityTests {
+        private static let page = PageGeometry(width: 1200, height: 1722)
+
+        /// The repeated strip at each seam, as a fraction of the page's own
+        /// height — the units the difference was actually noticed in.
+        private static func overlapAsFractionOfPage(screenWidth: Double, screenHeight: Double) -> Double {
+            let widthFit = BandLayout.widthFit(forViewportAspect: screenWidth / screenHeight)
+            let bands = BandLayout.bands(
+                for: [page],
+                screenWidth: screenWidth,
+                screenHeight: screenHeight,
+                widthFit: widthFit
+            )
+            guard bands.count > 1 else { return 1 }
+            return bands[0].rect.height - (bands[1].rect.y - bands[0].rect.y)
+        }
+
+        @Test("an iPhone in landscape now repeats as much of the page as an 11-inch iPad")
+        func phoneMatchesPad() {
+            let pad: Double = Self.overlapAsFractionOfPage(screenWidth: 1194, screenHeight: 834)
+            let phone: Double = Self.overlapAsFractionOfPage(screenWidth: 852, screenHeight: 393)
+            #expect(pad > 0.2)
+            #expect(phone > 0.2)
+            #expect(abs(phone - pad) < 0.05)
+        }
+
+        @Test("the 11-inch iPad's own band layout is left exactly as it was")
+        func padIsUnchanged() {
+            // 3 bands at ~23% of the page, which is what the fraction-of-band
+            // overlap happened to produce here and what reads well.
+            let bands = BandLayout.bands(for: [Self.page], screenWidth: 1194, screenHeight: 834)
+            #expect(bands.count == 3)
+            #expect(abs(Self.overlapAsFractionOfPage(screenWidth: 1194, screenHeight: 834) - 0.23) < 0.01)
+        }
+
+        @Test("widthFit insets only viewports wider than the glasses' own 16:9")
+        func widthFitOnlyInsetsWideViewports() {
+            #expect(BandLayout.widthFit(forViewportAspect: 1194.0 / 834.0) == 1)
+            #expect(BandLayout.widthFit(forViewportAspect: 16.0 / 9.0) == 1)
+            // Portrait, and anything squarer, is never inset either.
+            #expect(BandLayout.widthFit(forViewportAspect: 0.7) == 1)
+            // An iPhone in landscape, ~2.17:1, is pulled back to 16:9.
+            let phone = BandLayout.widthFit(forViewportAspect: 852.0 / 393.0)
+            #expect(phone > 0.8 && phone < 0.85)
+        }
+
+        @Test("a viewport too short for the requested overlap still terminates")
+        func absurdlyShortViewportTerminates() {
+            // `minimumOverlap` exceeds the whole band height here; without the
+            // cap the step would be zero or negative and the band count
+            // unbounded.
+            let bands = BandLayout.bands(
+                for: [Self.page],
+                screenWidth: 1000,
+                screenHeight: 10,
+                minimumOverlap: 5
+            )
+            #expect(bands.count > 1)
+            #expect(bands.count < 10000)
+            let last = bands[bands.count - 1]
+            #expect(abs(last.rect.y + last.rect.height - 1) < 0.0001)
+        }
     }
 
     @Test("rtl reverses page traversal order but never the within-page band order")
@@ -114,9 +188,11 @@ struct BandLayoutContinuousTests {
             for: [Self.slice, Self.slice],
             screenWidth: 100,
             screenHeight: 100,
+            minimumOverlap: 0.08,
             flow: .continuous
         )
-        // Strip is 6 screen-heights tall (2 pages x 3), so with 8% overlap:
+        // Strip is 6 screen-heights tall (2 pages x 3), and one screen-height
+        // is one page-width here, so an 0.08 overlap gives
         // ceil(5 / 0.92) + 1 = 7 bands, step 5/6.
         #expect(bands.count == 7)
 
@@ -141,6 +217,7 @@ struct BandLayoutContinuousTests {
             for: [Self.slice, Self.slice],
             screenWidth: 100,
             screenHeight: 100,
+            minimumOverlap: 0.08,
             flow: .continuous
         )
         let first = bands[0]
@@ -159,6 +236,7 @@ struct BandLayoutContinuousTests {
             for: [Self.slice, Self.remainder, Self.slice],
             screenWidth: 100,
             screenHeight: 100,
+            minimumOverlap: 0.08,
             flow: .continuous
         )
         // The short page is never any band's first page...
@@ -176,6 +254,7 @@ struct BandLayoutContinuousTests {
             for: [Self.slice, Self.unknown, Self.slice],
             screenWidth: 100,
             screenHeight: 100,
+            minimumOverlap: 0.08,
             flow: .continuous
         )
         // There's no height to place it at, so it can't join a strip: one
@@ -197,6 +276,7 @@ struct BandLayoutContinuousTests {
             for: [Self.slice, Self.remainder],
             screenWidth: 100,
             screenHeight: 100,
+            minimumOverlap: 0.08,
             flow: .continuous
         )
         #expect(bands.contains { $0.pageIndices == [0, 1] })
@@ -208,6 +288,7 @@ struct BandLayoutContinuousTests {
             for: [Self.remainder, Self.remainder],
             screenWidth: 100,
             screenHeight: 100,
+            minimumOverlap: 0.08,
             flow: .continuous
         )
         #expect(bands.count == 1)

@@ -125,14 +125,68 @@ struct GlassesCoordinatorTests {
         #expect(coordinator.dimLevel == 1)
     }
 
-    @Test("adjustAutoScrollSpeed clamps to 0.25...5")
-    func autoScrollSpeedClamps() {
+    @Test("adjustAutoScrollStep clamps to the ends of the speed ladder")
+    func autoScrollStepClamps() {
         let coordinator = makeCoordinator()
-        coordinator.adjustAutoScrollSpeed(by: -10)
-        #expect(coordinator.autoScrollSpeed == 0.25)
+        coordinator.adjustAutoScrollStep(by: -10)
+        #expect(coordinator.autoScrollStep == 0)
+        #expect(coordinator.autoScrollInterval == 4)
 
-        coordinator.adjustAutoScrollSpeed(by: 10)
-        #expect(coordinator.autoScrollSpeed == 5)
+        coordinator.adjustAutoScrollStep(by: 10)
+        #expect(coordinator.autoScrollStep == GlassesCoordinator.autoScrollIntervals.count - 1)
+        #expect(coordinator.autoScrollInterval == 1)
+    }
+
+    @Test("Entering auto mode starts it advancing")
+    func enablingAutoModeStartsPlayback() {
+        let coordinator = makeCoordinator()
+        coordinator.toggleAutoMode()
+        #expect(coordinator.isAutoModeEnabled)
+        #expect(coordinator.isAutoScrolling)
+    }
+
+    /// The whole point of splitting `isAutoModeEnabled` from `isAutoScrolling`:
+    /// a page turn used to drop the reader out of auto-scroll entirely, so
+    /// getting going again meant opening the menu that covers the page.
+    @Test("A page turn pauses the advance but stays in auto mode")
+    func navigationPausesWithoutLeavingAutoMode() {
+        let coordinator = makeCoordinator()
+        enter(coordinator, pages: [Self.tall], screenWidth: 800, screenHeight: 800)
+        coordinator.toggleAutoMode()
+
+        coordinator.advanceBand()
+        #expect(coordinator.isAutoModeEnabled)
+        #expect(!coordinator.isAutoScrolling)
+
+        coordinator.toggleAutoScrollPlayback()
+        #expect(coordinator.isAutoScrolling)
+    }
+
+    @Test("Leaving auto mode stops the advance and takes the pill off screen")
+    func disablingAutoModeStopsPlayback() {
+        let coordinator = makeCoordinator()
+        coordinator.setAutoMode(true)
+        coordinator.setAutoMode(false)
+        #expect(!coordinator.isAutoModeEnabled)
+        #expect(!coordinator.isAutoScrolling)
+    }
+
+    /// Play from a standing start shouldn't need the menu first — the
+    /// keyboard's `A` is exactly this path.
+    @Test("Play while auto mode is off enters auto mode")
+    func playbackFromOffEntersAutoMode() {
+        let coordinator = makeCoordinator()
+        coordinator.toggleAutoScrollPlayback()
+        #expect(coordinator.isAutoModeEnabled)
+        #expect(coordinator.isAutoScrolling)
+    }
+
+    @Test("Changing speed doesn't pause a running advance")
+    func speedChangeDoesNotPause() {
+        let coordinator = makeCoordinator()
+        coordinator.setAutoMode(true)
+        coordinator.adjustAutoScrollStep(by: 1)
+        #expect(coordinator.isAutoScrolling)
     }
 
     @Test("enter() starts at the given page's first band, not band 0 of the book")
@@ -226,22 +280,5 @@ struct GlassesCoordinatorTests {
         #expect(coordinator.bands[coordinator.currentBandIndex].touches(page: 1))
         // Matching on the band's own page alone would have resumed at 0.
         #expect(coordinator.currentBandIndex > 0)
-    }
-
-    @Test("any navigation keypress pauses auto-scroll, but toggling/adjusting it does not self-interrupt")
-    func navigationPausesAutoScrollButItsOwnControlsDont() {
-        let coordinator = makeCoordinator()
-        enter(coordinator, pages: [Self.tall], screenWidth: 800, screenHeight: 800)
-
-        coordinator.toggleAutoScroll()
-        #expect(coordinator.isAutoScrolling)
-
-        // Adjusting speed is auto-scroll's own control — it shouldn't pause it.
-        coordinator.adjustAutoScrollSpeed(by: 0.1)
-        #expect(coordinator.isAutoScrolling)
-
-        // A navigation key is not — it pauses.
-        coordinator.advanceBand()
-        #expect(!coordinator.isAutoScrolling)
     }
 }

@@ -188,10 +188,24 @@ public enum AID {
     public static let glassesNextBook = "glasses.nextBook"
     public static let glassesDimDecrease = "glasses.dimDecrease"
     public static let glassesDimIncrease = "glasses.dimIncrease"
+    /// Enters and leaves auto mode — which is what puts `glassesAutoScrollPill`
+    /// on screen — rather than starting and stopping the advance itself. That
+    /// is the pill's `glassesAutoScrollPlayPause`.
     public static let glassesAutoScrollToggle = "glasses.autoScrollToggle"
+
+    /// Auto mode's on-surface controls, visible while auto mode is on and the
+    /// chrome is off. Speed is signalled by the pill's tint, so these two have
+    /// no on-screen counterpart to assert against — check
+    /// `glassesAutoScrollPill`'s accessibility value instead.
+    public static let glassesAutoScrollPill = "glasses.autoScrollPill"
+    public static let glassesAutoScrollPlayPause = "glasses.autoScrollPlayPause"
     public static let glassesSpeedDecrease = "glasses.speedDecrease"
     public static let glassesSpeedIncrease = "glasses.speedIncrease"
     /// Corrects `BandLayout.isLongStrip`'s per-page/continuous guess for the
     /// whole series (PLAN §12).
     public static let glassesFlowToggle = "glasses.flowToggle"
+    /// Corrects `BandLayout.widthFit(forViewportAspect:)` — trading page size
+    /// for taller bands, which is where a phone's band overlap comes from.
+    public static let glassesWidthFitDecrease = "glasses.widthFitDecrease"
+    public static let glassesWidthFitIncrease = "glasses.widthFitIncrease"
 }
