@@ -2,10 +2,9 @@
 //  DownloadSettings.swift
 //  Kontinuity
 //
-//  The two user-facing knobs from PLAN §6: a storage cap (default 8 GB, a
-//  guess per PLAN §10) and whether a finished, synced book auto-deletes its
-//  files. `UserDefaults`-backed — this is the app's first setting, so there's
-//  no existing persistence pattern to match.
+//  The two user-facing retention knobs: a storage cap (default 8 GB, a guess)
+//  and whether a finished, synced book auto-deletes its files.
+//  `UserDefaults`-backed.
 //
 
 import Foundation

@@ -25,8 +25,7 @@ public enum UITestMode: String, Sendable {
     case connected
     /// `.connected`, but every server-hit method fails offline-shaped
     /// (`KomgaError.transport(code: .notConnectedToInternet, …)`) and
-    /// nothing is pre-seeded downloaded — PLAN §11's "nothing to fall back
-    /// to" case.
+    /// nothing is pre-seeded downloaded — the "nothing to fall back to" case.
     case offline
     /// `.offline`, plus a handful of pre-seeded downloaded `Book` rows so a
     /// UI test can assert the offline fallback views actually show what's
@@ -102,7 +101,6 @@ public enum AID {
     public static let browseError = "browse.error"
     /// The persistent "showing downloaded ... only" banner an offline
     /// fallback view shows so it's never mistaken for the whole library
-    /// (PLAN §11).
     public static let offlineBanner = "offline.banner"
 
     /// Grid cells and book rows are single accessibility elements — combined so
@@ -159,19 +157,19 @@ public enum AID {
     public static let readerDone = "reader.done"
     public static let readerPageLabel = "reader.pageLabel"
     public static let readerScrubber = "reader.scrubber"
-    /// Mode A's continuous/web-comic scroll surface (PLAN §12) — the vertical
+    /// Mode A's continuous/web-comic scroll surface — the vertical
     /// `ScrollView` shown in place of `readerPage`'s `TabView` when the book
     /// is long-strip.
     public static let readerContinuousSurface = "reader.continuousSurface"
     /// The "swipe/tap again to continue" toast shown on the last page of a
-    /// book (READER-DESIGN §2's Komga-style two-step advance).
+    /// book, the Komga-style two-step advance.
     public static let readerNextChapterToast = "reader.nextChapterToast"
-    /// Mode A's own per-page/continuous correction (PLAN §12) — the panel
+    /// Mode A's own per-page/continuous correction — the panel
     /// counterpart to `glassesFlowToggle`, reachable without ever entering
     /// glasses mode.
     public static let readerFlowToggle = "reader.flowToggle"
 
-    // Glasses mode (Mode B, READER-DESIGN §3)
+    // Glasses mode (Mode B)
     public static let readerGlassesModeButton = "reader.glassesModeButton"
     public static let glassesSurface = "glasses.surface"
     public static let glassesStatusLabel = "glasses.statusLabel"
@@ -181,8 +179,8 @@ public enum AID {
     /// hasn't prefetched through.
     public static let glassesPageSpinner = "glasses.pageSpinner"
 
-    /// Chrome reached by the centre-half tap (PLAN 6B §C/§D, READER-DESIGN
-    /// §3's iPhone section) — the touch-reachable equivalents for the
+    /// Chrome reached by the centre-half tap — the touch-reachable equivalents
+    /// for the
     /// keyboard-only controls, since a phone in landscape has no keyboard.
     public static let glassesPageLabel = "glasses.pageLabel"
     public static let glassesNextBook = "glasses.nextBook"
@@ -202,7 +200,7 @@ public enum AID {
     public static let glassesSpeedDecrease = "glasses.speedDecrease"
     public static let glassesSpeedIncrease = "glasses.speedIncrease"
     /// Corrects `BandLayout.isLongStrip`'s per-page/continuous guess for the
-    /// whole series (PLAN §12).
+    /// whole series.
     public static let glassesFlowToggle = "glasses.flowToggle"
     /// Corrects `BandLayout.widthFit(forViewportAspect:)` — trading page size
     /// for taller bands, which is where a phone's band overlap comes from.

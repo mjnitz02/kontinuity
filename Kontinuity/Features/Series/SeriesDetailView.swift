@@ -60,7 +60,7 @@ struct SeriesDetailView: View {
 
     private var header: some View {
         // Side-by-side on a regular-width iPad, which is the whole target; the
-        // compact fallback is phase 7's problem but costs nothing to allow for.
+        // compact fallback isn't the target but costs nothing to allow for.
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .top, spacing: 20) {
                 CoverImage(target: .series(current.id))
@@ -84,7 +84,7 @@ struct SeriesDetailView: View {
         }
     }
 
-    /// No live series metadata while offline (PLAN §11) — no summary, genres,
+    /// No live series metadata while offline — no summary, genres,
     /// status, author line, or unread count, none of which this device has a
     /// cached answer for. Just the title (from the cached `seriesTitle`) and
     /// how much of it is actually here to read.
@@ -121,8 +121,9 @@ struct SeriesDetailView: View {
             .font(.subheadline)
             .foregroundStyle(.secondary)
 
-            if !authors.isEmpty {
-                Text(authors)
+            let credits = current.booksMetadata.authors.creditLine()
+            if !credits.isEmpty {
+                Text(credits)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -164,7 +165,7 @@ struct SeriesDetailView: View {
             .accessibilityIdentifier(AID.seriesDownloadUnread)
 
             if activeDownloadCount > 0 {
-                Text("Downloading \(activeDownloadCount) book\(activeDownloadCount == 1 ? "" : "s")…")
+                Text("Downloading \(activeDownloadCount.counted("book"))…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -176,9 +177,7 @@ struct SeriesDetailView: View {
     /// and the SwiftData row is the thing that's actually still true then.
     private var activeDownloadCount: Int {
         let seriesBookIDs = Set(feed.items.map(\.id))
-        return bookRows.filter {
-            seriesBookIDs.contains($0.id) && [.queued, .downloading, .decompressing].contains($0.downloadState)
-        }.count
+        return bookRows.count { seriesBookIDs.contains($0.id) && $0.downloadState.isActive }
     }
 
     // MARK: - Books
@@ -251,7 +250,7 @@ struct SeriesDetailView: View {
         bookRows.first { $0.id == bookID }?.downloadState ?? .notDownloaded
     }
 
-    // MARK: - Offline fallback (PLAN §11)
+    // MARK: - Offline fallback
 
     /// True once a request has failed offline-shaped and this series has at
     /// least one downloaded book to show instead. Reached with none (a stale
@@ -301,7 +300,7 @@ struct SeriesDetailView: View {
     private var bookCountSummary: String? {
         let count = current.booksCount
         guard count > 0 || refreshed != nil else { return nil }
-        var text = "\(count) book\(count == 1 ? "" : "s")"
+        var text = count.counted("book")
         // Komga knows the published total for many series, and "12 of 358" is
         // the difference between a gap in the library and a series still running.
         if let total = current.metadata.totalBookCount, total > count {
@@ -317,15 +316,6 @@ struct SeriesDetailView: View {
         let status = current.metadata.status
         guard !status.isEmpty else { return nil }
         return status.capitalized
-    }
-
-    /// Komga aggregates every role across a series' books, so the same person
-    /// appears six times. Writers first, de-duplicated, capped.
-    private var authors: String {
-        let writers = current.booksMetadata.authors.filter { $0.role == "writer" }
-        let names = (writers.isEmpty ? current.booksMetadata.authors : writers).map(\.name)
-        var seen = Set<String>()
-        return names.filter { seen.insert($0).inserted }.prefix(3).joined(separator: ", ")
     }
 
     private var summary: String {
@@ -384,9 +374,8 @@ struct BookRow: View {
         .contentShape(.rect)
         // As with the grid cell: one element for VoiceOver, so the read state
         // — and the download state — live in this label rather than in a
-        // separately queryable child (PLAN phase 2's lesson: `.combine`
-        // removes child elements from the tree, so a badge inside couldn't be
-        // queried on its own anyway).
+        // separately queryable child — `.combine` removes child elements from
+        // the tree, so a badge inside couldn't be queried on its own anyway.
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityIdentifier(AID.bookRow(book.id))

@@ -33,7 +33,7 @@
             roles: ["USER", "FILE_DOWNLOAD", "PAGE_STREAMING"]
         )
 
-        /// PLAN §11's offline-simulation mode (`UITestMode.offline` /
+        /// The offline-simulation mode (`UITestMode.offline` /
         /// `.offlineWithDownloads`): every server-hit method fails the same
         /// way a real dropped connection would, so the app's own
         /// `KomgaError.isOffline` classification is what's under test, not a
@@ -160,7 +160,7 @@
                 throw KomgaError.notFound
             }
             let count = max(book.media.pagesCount, 0)
-            // Portrait, aspect ≈ 0.66 — matches KOMGA-API §2's measurement
+            // Portrait, aspect ≈ 0.66 — matches the measurement
             // against a real CBZ, so the layout engine sees realistic input.
             let readingOrder = (0 ..< count).map { index in
                 KomgaPageLink(

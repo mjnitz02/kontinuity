@@ -140,7 +140,7 @@ public struct KomgaClient: KomgaServing {
             // Instant, no network attempt — either `URLSession.komga`'s
             // `URLCache` already has the bytes from an earlier revalidated
             // fetch, or this throws immediately rather than hanging on a
-            // server that isn't there (PLAN §11).
+            // server that isn't there.
             request.cachePolicy = .returnCacheDataDontLoad
         }
         do {
@@ -258,8 +258,8 @@ public struct KomgaClient: KomgaServing {
     /// Performs the request and maps the status code.
     ///
     /// Returns `nil` for 204 — Komga uses "No Content" to mean *never opened* on
-    /// the progression endpoint, which is a value, not an error (KOMGA-API §4).
-    /// Establishing that here keeps phase 4 from having to special-case it.
+    /// the progression endpoint, which is a value, not an error. Establishing
+    /// that here keeps the sync engine from having to special-case it.
     @discardableResult
     private func send(_ request: URLRequest, authenticated: Bool = true) async throws -> Data? {
         var request = request
@@ -351,7 +351,7 @@ public struct KomgaClient: KomgaServing {
     }()
 }
 
-/// The progression PUT body (KOMGA-API §4). File-private: only `KomgaClient`
+/// The progression PUT body. File-private: only `KomgaClient`
 /// constructs one, so there's no reason to make the wire shape part of the
 /// public surface `KomgaServing` callers see. Flat rather than nested two deep
 /// (`Locator.Locations`) — `PositionLocator` sits alongside its siblings
@@ -377,7 +377,7 @@ struct PositionLocation: Encodable {
     let position: Int
 }
 
-/// The read-progress PATCH body (KOMGA-API §4) — `markRead`'s only shape;
+/// The read-progress PATCH body — `markRead`'s only shape;
 /// `markUnread` is a bodyless DELETE.
 struct KomgaReadProgressRequest: Encodable {
     let completed: Bool

@@ -90,9 +90,8 @@ final class ConnectModel {
             apiKeyText = ""
             roleWarning = Self.roleWarning(for: connection.user)
         } catch {
-            let komga = error as? KomgaError
-            errorMessage = komga?.errorDescription ?? error.localizedDescription
-            errorSuggestion = komga?.recoverySuggestion
+            errorMessage = error.userMessage
+            errorSuggestion = (error as? KomgaError)?.recoverySuggestion
         }
     }
 

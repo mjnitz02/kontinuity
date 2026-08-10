@@ -2,7 +2,7 @@
 //  ReaderView.swift
 //  Kontinuity
 //
-//  Mode A (iPad panel) from READER-DESIGN §2. Portrait: one page. Landscape:
+//  Mode A, the iPad panel. Portrait: one page. Landscape:
 //  two-page spreads, decided off the container's own aspect rather than device
 //  orientation directly, so split-screen/Stage Manager sizing is honoured too.
 //
@@ -21,9 +21,9 @@ struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
     /// Compact height is true for iPhone landscape and false for every iPad
     /// configuration, including Stage Manager and Split View — the
-    /// distinction PLAN 6B §B wants, and not one `UIDevice.orientation`
-    /// or raw aspect can make (a face-up iPad fires orientation
-    /// notifications despite never changing shape).
+    /// distinction that matters, and not one `UIDevice.orientation` or raw
+    /// aspect can make (a face-up iPad fires orientation notifications
+    /// despite never changing shape).
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var model: ReaderModel
     @State private var loader: PageImageLoader
@@ -84,13 +84,12 @@ struct ReaderView: View {
             }
         }
         // Retention/auto-remove must never delete the book currently open
-        // (PLAN §6) — this is how the coordinator knows which one that is.
+        // — this is how the coordinator knows which one that is.
         .onAppear { downloads.openBookID = book.id }
-        // Mode B's progression entry point (READER-DESIGN §5, PLAN 6B §C gap
-        // 1): `GlassesCoordinator` must not learn about `ProgressionSyncEngine`
-        // (PLAN's constraint), so this — the input surface mounted in every
-        // Mode B configuration — is what maps a band reaching the last band
-        // of its page to `ReaderModel.recordPageRead`.
+        // Mode B's progression entry point. `GlassesCoordinator` deliberately
+        // knows nothing about `ProgressionSyncEngine`, so this — the input
+        // surface mounted in every Mode B configuration — is what maps a band
+        // reaching the last band of its page to `ReaderModel.recordPageRead`.
         .onChange(of: glasses.isActive) { _, active in
             if active {
                 handleGlassesBandChange(glasses.currentBandIndex)
@@ -108,10 +107,9 @@ struct ReaderView: View {
                 continuousPageIndex = model.initialPageIndex
             }
         }
-        // iPhone reader mode selection (PLAN 6B §B): compact height is
-        // landscape on every iPhone and never true on an iPad, so this only
-        // ever fires there — the iPad's manual eyeglasses button is
-        // untouched. The round trip is position-preserving in both
+        // iPhone reader mode selection: compact height is landscape on every
+        // iPhone and never true on an iPad, so this only ever fires there —
+        // the iPad's manual eyeglasses button is untouched. The round trip is position-preserving in both
         // directions: entering at the page currently open, and leaving at
         // the page the current band belongs to.
         .onChange(of: verticalSizeClass) { _, newValue in
@@ -143,7 +141,7 @@ struct ReaderView: View {
         }
     }
 
-    /// Mode A's web-comic surface (PLAN §12, phase 9B) — a vertical scroll
+    /// Mode A's web-comic surface — a vertical scroll
     /// replacing `reader`'s `TabView` for a book `ReaderModel.flow` resolved
     /// as `.continuous`. Has no spread pairing, so `updateLayout`/rotation
     /// handling below is a `reader`-only concern.
@@ -164,7 +162,7 @@ struct ReaderView: View {
         )
     }
 
-    /// Mode A's own per-page/continuous correction (PLAN §12) — mirrors
+    /// Mode A's own per-page/continuous correction — mirrors
     /// `GlassesCoordinator.toggleFlow`, and is position-preserving the same
     /// way `exitGlassesModeToMatchingPage` is: the page currently showing on
     /// whichever surface is active carries over to the other.
@@ -237,7 +235,7 @@ struct ReaderView: View {
         .animation(.default, value: nextChapterPrompt)
     }
 
-    /// Komga's "swipe/tap past the last page" affordance (READER-DESIGN §2):
+    /// Komga's "swipe/tap past the last page" affordance:
     /// the first forward action once there are no more pages arms a toast
     /// instead of doing nothing; a second forward action within the window
     /// actually advances. Reuses the same next-book plumbing as the "Start
@@ -263,26 +261,15 @@ struct ReaderView: View {
 
     private var chrome: some View {
         VStack {
-            HStack {
-                Button("Done") { dismiss() }
-                    .accessibilityIdentifier(AID.readerDone)
-                Spacer()
-                if !model.spreads.isEmpty {
-                    Text("\(model.currentSpreadIndex + 1) / \(model.spreads.count)")
-                        .accessibilityIdentifier(AID.readerPageLabel)
-                }
-                Spacer()
-                Button(action: toggleFlow) {
-                    Image(systemName: "square.stack")
-                }
-                .accessibilityIdentifier(AID.readerFlowToggle)
-                Button(action: enterGlassesMode) {
-                    Image(systemName: "eyeglasses")
-                }
-                .accessibilityIdentifier(AID.readerGlassesModeButton)
-            }
-            .padding()
-            .background(.ultraThinMaterial)
+            ReaderChromeBar(
+                position: model.spreads.isEmpty
+                    ? nil
+                    : "\(model.currentSpreadIndex + 1) / \(model.spreads.count)",
+                flow: model.flow,
+                onDone: { dismiss() },
+                onToggleFlow: toggleFlow,
+                onEnterGlasses: enterGlassesMode
+            )
 
             Spacer()
 
@@ -327,12 +314,21 @@ struct ReaderView: View {
     /// full-screen cover rather than dismissing and re-presenting.
     private func openNextBook(_ next: KomgaBook) {
         nextChapterPrompt = nil
+        let newModel = handOff(to: next)
+        Task { await newModel.load() }
+    }
+
+    /// Flushes the outgoing book, moves the retention exclusion to the incoming
+    /// one, and swaps in its model — everything both next-book paths do before
+    /// they diverge on whether they can await the load.
+    private func handOff(to next: KomgaBook) -> ReaderModel {
         model.flushProgress()
         if downloads.openBookID == book.id {
             downloads.openBookID = next.id
         }
-        model = ReaderModel(book: next, service: service, sync: sync, downloads: downloads)
-        Task { await model.load() }
+        let newModel = ReaderModel(book: next, service: service, sync: sync, downloads: downloads)
+        model = newModel
+        return newModel
     }
 
     private func exitGlassesAndReader() {
@@ -341,16 +337,16 @@ struct ReaderView: View {
     }
 
     /// The iPad's manual button and the iPhone's auto-entry on rotation both
-    /// land here — same action, different trigger (PLAN 6B §B). Entering at
-    /// `currentLeadingPageIndex` rather than band 0 of the book is gap 2
-    /// (PLAN 6B §C): a rotation must not throw the reader back to page 1.
+    /// land here — same action, different trigger. Entering at
+    /// `currentLeadingPageIndex` rather than band 0 of the book matters: a
+    /// rotation must not throw the reader back to page 1.
     /// The eyeglasses button doesn't itself turn the phone sideways, and
     /// glasses mode has no portrait layout at all on an iPhone — left
     /// unrotated, entry via the button (rather than via the rotation this
     /// mode is actually designed around) leaves bands rendered into a
     /// portrait frame. Nudging the scene to landscape here closes that gap;
     /// it's a no-op on iPad, which has a real portrait glasses layout and
-    /// whose button is left untouched (PLAN 6B §B).
+    /// whose button is left untouched.
     private func rotateToLandscapeIfPhone() {
         guard UIDevice.current.userInterfaceIdiom == .phone else { return }
         guard let scene = UIApplication.shared.connectedScenes
@@ -397,12 +393,7 @@ struct ReaderView: View {
     private func advanceToNextBookForGlasses() async {
         await model.loadNextBookIfNeeded()
         guard let next = model.nextBook else { return }
-        model.flushProgress()
-        if downloads.openBookID == book.id {
-            downloads.openBookID = next.id
-        }
-        let newModel = ReaderModel(book: next, service: service, sync: sync, downloads: downloads)
-        model = newModel
+        let newModel = handOff(to: next)
         await newModel.load()
         glasses.enter(
             GlassesContent(
@@ -416,13 +407,12 @@ struct ReaderView: View {
         )
     }
 
-    /// Records progress for every page this band *completes* — READER-DESIGN
-    /// §5: "a page counts as read... when its **last** band is reached", not
-    /// its first, so a book skimmed in glasses mode doesn't report pages never
-    /// actually seen.
+    /// Records progress for every page this band *completes*: a page counts as
+    /// read when its **last** band is reached, not its first, so a book skimmed
+    /// in glasses mode doesn't report pages never actually seen.
     ///
     /// Plural, not singular, because a `.continuous` band covers more than one
-    /// page (PLAN §12): a page short enough to be swallowed whole by a single
+    /// page: a page short enough to be swallowed whole by a single
     /// band is completed by the same band that completes the one before it,
     /// and looking only at the band's own `pageIndex` would leave it
     /// permanently unread.

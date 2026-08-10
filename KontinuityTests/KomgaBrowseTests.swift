@@ -34,7 +34,7 @@ struct KomgaBrowseTests {
           "booksCount": 12, "booksReadCount": 3, "booksUnreadCount": 8,
           "booksInProgressCount": 1,
           "metadata": { "status": "ONGOING", "statusLock": false,
-            "title": "Air Gear", "titleLock": false, "titleSort": "Air Gear",
+            "title": "Skyward Bound", "titleLock": false, "titleSort": "Skyward Bound",
             "summary": "", "readingDirection": "", "publisher": "",
             "ageRating": 13, "language": "en",
             "genres": ["shounen", "action"], "tags": [],
@@ -55,8 +55,8 @@ struct KomgaBrowseTests {
     /// A book with no read progress — Komga sends an explicit `null`.
     static let unreadBookJSON = """
     { "id": "0R67AVDDQ3H1D", "seriesId": "0R67AVDDK3H37",
-      "seriesTitle": "Air Gear", "libraryId": "0R679Z2BQ3HFP",
-      "name": "Air Gear - Chapter 001", "url": "/data/ch1.cbz", "number": 1,
+      "seriesTitle": "Skyward Bound", "libraryId": "0R679Z2BQ3HFP",
+      "name": "Skyward Bound - Chapter 001", "url": "/data/ch1.cbz", "number": 1,
       "created": "2026-08-02T10:43:29Z", "lastModified": "2026-08-02T10:43:29Z",
       "fileLastModified": "2026-08-02T10:42:24Z",
       "sizeBytes": 32054882, "size": "30.6 MiB",
@@ -64,7 +64,7 @@ struct KomgaBrowseTests {
                  "pagesCount": 67, "comment": "",
                  "epubDivinaCompatible": false, "epubIsKepub": false,
                  "mediaProfile": "DIVINA" },
-      "metadata": { "title": "Air Gear - Chapter 001", "summary": "",
+      "metadata": { "title": "Skyward Bound - Chapter 001", "summary": "",
                     "number": "1", "numberSort": 1.0,
                     "releaseDate": "2018-01-18",
                     "authors": [ { "name": "Oh!great", "role": "writer" } ],
@@ -111,7 +111,7 @@ struct KomgaBrowseTests {
         #expect(page.number == 0)
 
         let series = try #require(page.content.first)
-        #expect(series.displayTitle == "Air Gear")
+        #expect(series.displayTitle == "Skyward Bound")
         #expect(series.booksUnreadCount == 8)
         #expect(series.metadata.totalBookCount == 358)
         #expect(series.metadata.genres.contains("shounen"))
@@ -121,7 +121,7 @@ struct KomgaBrowseTests {
 
     @Test("falls back to the folder name when a series has no metadata title")
     func fallsBackToFolderName() throws {
-        let json = Self.seriesPageJSON.replacingOccurrences(of: "\"title\": \"Air Gear\"", with: "\"title\": \"\"")
+        let json = Self.seriesPageJSON.replacingOccurrences(of: "\"title\": \"Skyward Bound\"", with: "\"title\": \"\"")
         let page = try decode(KomgaPage<KomgaSeries>.self, json)
 
         #expect(page.content.first?.displayTitle == "data")
@@ -271,10 +271,10 @@ struct KomgaBrowseTests {
     @Test("searching drops the sort so Komga can order by relevance")
     func searchDropsSort() async throws {
         let (client, transport) = try makeClient([.json(Self.seriesPageJSON)])
-        _ = try await client.series(matching: SeriesQuery(searchTerm: " air gear "))
+        _ = try await client.series(matching: SeriesQuery(searchTerm: " skyward bound "))
 
         let query = try queryValues(#require(transport.requests.first))
-        #expect(query["search"] == ["air gear"])
+        #expect(query["search"] == ["skyward bound"])
         #expect(query["sort"] == nil)
     }
 

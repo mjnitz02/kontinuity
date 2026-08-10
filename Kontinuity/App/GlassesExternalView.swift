@@ -5,14 +5,14 @@
 //  The actual pixels shown on a real external display, connected via
 //  `UIWindowSceneSessionRoleExternalDisplayNonInteractive` and built by
 //  `GlassesSceneDelegate`. A pure observer — no gesture recognizers, no key
-//  handling, nothing interactive, because that scene can never be key (PLAN
-//  phase 6's one architectural finding). It renders the same `Band` the
+//  handling, nothing interactive, because that scene can never be key. It
+//  renders the same `Band` the
 //  iPad's own `GlassesReaderView` is stepping through, reading everything —
 //  band index, `pageSources`, `loader`, dim level — off the single shared
 //  `GlassesCoordinator` handed over via `AppDelegate`'s static handoff.
 //
 //  The dim overlay applies only here, never on the iPad panel, which stays
-//  true black regardless (READER-DESIGN §3).
+//  true black regardless.
 //
 
 import KontinuityCore
@@ -24,7 +24,7 @@ struct GlassesExternalView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if let band = currentBand, let loader = glasses.loader {
+            if let band = glasses.currentBand, let loader = glasses.loader {
                 BandPageView(
                     band: band,
                     pageSources: glasses.pageSources,
@@ -47,9 +47,5 @@ struct GlassesExternalView: View {
                     .padding(24)
             }
         }
-    }
-
-    private var currentBand: Band? {
-        glasses.bands.indices.contains(glasses.currentBandIndex) ? glasses.bands[glasses.currentBandIndex] : nil
     }
 }

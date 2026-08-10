@@ -24,7 +24,7 @@ struct SeriesGridView: View {
     @State private var readFilter: KomgaReadStatus?
     /// Only read when a fetch fails offline-shaped and this is the All Series
     /// root (`libraryID == nil`) — a library-specific grid has no way to know
-    /// which cached series belong to it (PLAN §11's scope boundary).
+    /// which cached series belong to it.
     @Query private var bookRows: [Book]
 
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 16)]
@@ -61,7 +61,7 @@ struct SeriesGridView: View {
         // `.searchable`'s floating bottom field (iPhone/compact width) isn't
         // reflected in a plain `ScrollView`'s own safe area the way it is for
         // `List`, so without this the last row's title sits behind it and its
-        // tap target is unreachable (PLAN 6B §A). Sized generously rather than
+        // tap target is unreachable. Sized generously rather than
         // to the field's exact height, which isn't published API.
         .safeAreaInset(edge: .bottom) {
             Color.clear.frame(height: 60)
@@ -74,7 +74,7 @@ struct SeriesGridView: View {
         .toolbar {
             // Sort and read-status filtering are both server-driven, and
             // meaningless over the handful of local rows an offline fallback
-            // shows (PLAN §11).
+            // shows.
             if !isOfflineFallback {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -111,7 +111,7 @@ struct SeriesGridView: View {
         }
         .refreshable { await feed.refresh() }
         // Re-runs on any of the four, and the 250ms only bites for search:
-        // typing "air gear" would otherwise be eight round trips.
+        // typing "skyward bound" would otherwise be eight round trips.
         .task(id: Query(libraryID: libraryID, search: searchText.trimmed, readFilter: readFilter, sort: sort)) {
             if !searchText.trimmed.isEmpty {
                 try? await Task.sleep(for: .milliseconds(250))
@@ -175,11 +175,10 @@ struct SeriesGridView: View {
         }
     }
 
-    // MARK: - Offline fallback (PLAN §11)
+    // MARK: - Offline fallback
 
     /// True once a request has failed offline-shaped and there's at least one
-    /// downloaded series to show instead — the All Series root only, per
-    /// §11's scope boundary.
+    /// downloaded series to show instead — the All Series root only.
     private var isOfflineFallback: Bool {
         libraryID == nil && feed.phase.isOffline && !offlineSeriesSummaries.isEmpty
     }
@@ -222,7 +221,7 @@ struct SeriesGridView: View {
 
 struct SeriesCell: View {
     let series: KomgaSeries
-    /// False for an offline fallback cell (PLAN §11): read state is
+    /// False for an offline fallback cell: read state is
     /// server-computed and the offline summary this cell was built from
     /// doesn't carry it — showing "Read" or an unread count derived from
     /// zeroed-out fields would be inventing an answer, not reporting one.
@@ -273,7 +272,7 @@ struct SeriesCell: View {
     }
 
     private var subtitle: String {
-        let books = "\(series.booksCount) book\(series.booksCount == 1 ? "" : "s")"
+        let books = series.booksCount.counted("book")
         guard showsReadState else { return books }
         if series.isFullyRead {
             return "\(books) · Read"

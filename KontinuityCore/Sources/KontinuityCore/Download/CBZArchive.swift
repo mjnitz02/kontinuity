@@ -10,7 +10,7 @@
 //  in the wild don't use either, and Komga's own scanner wouldn't produce one.
 //
 //  The archive carries no page-order metadata of its own — only filenames.
-//  Komga's DIVINA manifest is the source of truth for order (PLAN §6 fetches
+//  Komga's DIVINA manifest is the source of truth for order (the download
 //  it first), so this only needs to extract pages in the same order Komga's
 //  own scanner would see them: a natural, numeric-aware sort of image-suffixed
 //  entries, with junk (ComicInfo.xml, __MACOSX/, dotfiles, directory entries)

@@ -7,7 +7,7 @@
 //  for the left/right/centre tap zones would sit on top of this view and
 //  intercept every touch, breaking the scroll view's own pinch and pan
 //  underneath it. Owning the taps here, gated behind the double-tap recognizer
-//  via `require(toFail:)`, avoids that entirely (READER-DESIGN §2).
+//  via `require(toFail:)`, avoids that entirely.
 //
 
 import KontinuityCore
@@ -99,7 +99,7 @@ struct ZoomableImageView: UIViewRepresentable {
 
         /// Sizes the image view to the image's native pixel size, then picks a
         /// `minimumZoomScale` that fits it to the current bounds — the actual
-        /// "portrait: one page fit-to-screen" behaviour (READER-DESIGN §2).
+        /// "portrait: one page fit-to-screen" behaviour.
         /// Without this, `imageView.frame` stays at the image's full (often
         /// larger-than-screen) pixel size and the scroll view is pannable even
         /// at "zoomScale 1", which also swallows the TabView's own swipe.
@@ -146,10 +146,9 @@ struct ZoomableImageView: UIViewRepresentable {
             scrollView.zoom(to: CGRect(origin: origin, size: size), animated: true)
         }
 
-        /// Quarters, not thirds (READER-DESIGN §1 supersedes §2): edge
-        /// quarters page, the centre half — a bigger, more forgiving target —
-        /// toggles chrome. The only change PLAN 6B §D makes to Mode A; the
-        /// swipe here is still the paging `TabView`, unchanged.
+        /// Quarters, not thirds: edge quarters page, the centre half — a
+        /// bigger, more forgiving target — toggles chrome. The swipe here is
+        /// still the paging `TabView`, unchanged.
         @objc
         func handleSingleTap(_ recognizer: UITapGestureRecognizer) {
             guard let scrollView else { return }

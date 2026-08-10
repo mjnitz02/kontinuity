@@ -2,7 +2,7 @@
 //  BandPageView.swift
 //  Kontinuity
 //
-//  Mode B (READER-DESIGN §3-4): renders one `Band` — a width-fit crop of the
+//  Mode B: renders one `Band` — a width-fit crop of the
 //  page (or, under `BandFlow.continuous`, the *pages*) it covers. `BandRect`
 //  is fractional page-space (0...1), and pages are width-fit by construction
 //  (`BandLayout` normalises every page to width 1), so positioning is a plain
@@ -111,7 +111,7 @@ struct BandPageView: View {
             }
         }
         // Komga hadn't analysed this page, so the decoded image is the only
-        // source of its aspect (READER-DESIGN §4's "degrade" case).
+        // source of its aspect — the degrade case.
         guard let image = loaded.images[pageIndex], image.size.width > 0 else { return width }
         return width * image.size.height / image.size.width
     }

@@ -10,7 +10,7 @@ import SwiftUI
 @main
 struct KontinuityApp: App {
     /// Catches `handleEventsForBackgroundURLSession` so a download that
-    /// finished while suspended can complete (PLAN §6) — a pure-SwiftUI `App`
+    /// finished while suspended can complete — a pure-SwiftUI `App`
     /// has no delegate by default.
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 

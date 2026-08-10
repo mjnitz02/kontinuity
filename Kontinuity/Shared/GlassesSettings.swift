@@ -2,9 +2,9 @@
 //  GlassesSettings.swift
 //  Kontinuity
 //
-//  The tunable knobs for Mode B (READER-DESIGN §3): dim overlay level,
+//  The tunable knobs for Mode B: dim overlay level,
 //  auto-scroll speed, the band overlap and width fit BandLayout uses, and the
-//  per-series continuous/per-page override (PLAN §12).
+//  per-series continuous/per-page override.
 //  `UserDefaults`-backed, mirroring `DownloadSettings` — tuned once in bed,
 //  kept every night, rather than reset back to defaults on every entry.
 //
@@ -91,7 +91,7 @@ nonisolated struct GlassesSettings: Sendable {
 
     /// Stored as a `Bool` rather than the enum's name so the defaults domain
     /// holds a plain plist value, the same reasoning `Book.downloadStateRaw`
-    /// arrived at for SwiftData (PLAN phase 5, bug 2).
+    /// arrived at for SwiftData.
     func setFlowOverride(_ flow: BandFlow?, forSeries seriesID: String) {
         var overrides = defaults.dictionary(forKey: Self.flowOverridesKey) ?? [:]
         overrides[seriesID] = flow.map { $0 == .continuous }

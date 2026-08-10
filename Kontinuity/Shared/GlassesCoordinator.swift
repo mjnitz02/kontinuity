@@ -2,7 +2,7 @@
 //  GlassesCoordinator.swift
 //  Kontinuity
 //
-//  Mode B's impure half (READER-DESIGN §3, PLAN phase 6) — mirrors the
+//  Mode B's impure half — mirrors the
 //  ProgressionSync/ProgressionSyncEngine and DownloadRetention/
 //  DownloadCoordinator split: `BandLayout` in KontinuityCore holds the pure
 //  math, this owns the session-scoped state (which band is showing, whether
@@ -79,14 +79,14 @@ final class GlassesCoordinator {
     private var screenSize: CGSize = .zero
     private var seriesID: String?
 
-    /// Whether bands stop at page boundaries or run through them (PLAN §12).
+    /// Whether bands stop at page boundaries or run through them.
     /// Defaulted per book from `BandLayout.isLongStrip` and overridable per
     /// series — a heuristic over scraped metadata gets to be a default, not a
     /// verdict.
     private(set) var flow: BandFlow = .perPage
 
-    /// "Are glasses attached?" (READER-DESIGN §3's two-signals table) —
-    /// bridged from `UIScreen.didConnectNotification`/
+    /// "Are glasses attached?" — the coarser of the two signals, bridged from
+    /// `UIScreen.didConnectNotification`/
     /// `didDisconnectNotification` below. A fine trigger for offering or
     /// auto-entering the mode; **not** what gates the panel blackout —
     /// mirroring makes this true while `isExternalSceneConnected` stays
@@ -100,7 +100,7 @@ final class GlassesCoordinator {
     /// only signal that means "there is a real, independent
     /// `…RoleExternalDisplayNonInteractive` scene" — under mirroring the
     /// panel *is* the thing the glasses show, so only this flag may black it
-    /// out (READER-DESIGN §3).
+    /// out.
     private(set) var isExternalSceneConnected = false
 
     var dimLevel: Double {
@@ -133,7 +133,7 @@ final class GlassesCoordinator {
     private var autoScrollTask: Task<Void, Never>?
 
     /// "A single dim status line appears only while a key is being pressed"
-    /// (READER-DESIGN §3) — a real fade, not just a snapshot check against
+    /// — a real fade, not just a snapshot check against
     /// `lastKeyPressDate` at render time, which would never hide itself
     /// again once shown without some *other* state change forcing a
     /// re-render.
@@ -189,9 +189,9 @@ final class GlassesCoordinator {
     /// than re-fetching the manifest.
     ///
     /// Enters at the first band of `startingPageIndex` — Mode A's currently
-    /// open page — rather than always band 0 of the book (gap 2, PLAN 6B
-    /// §C): entering glasses mode, or auto-rotating into it on iPhone, must
-    /// not throw the reader back to page 1.
+    /// open page — rather than always band 0 of the book: entering glasses
+    /// mode, or auto-rotating into it on iPhone, must not throw the reader
+    /// back to page 1.
     func enter(_ content: GlassesContent, startingPageIndex: Int, screenSize: CGSize) {
         pageSources = content.pageSources
         pageGeometries = content.pageGeometries
@@ -212,10 +212,10 @@ final class GlassesCoordinator {
     }
 
     /// Recomputes `bands` for a new size — a rotation while Mode B is active
-    /// (gap 3, PLAN 6B §C) — preserving position as **(page index, fraction
+    /// — preserving position as **(page index, fraction
     /// through that page's bands)** rather than a raw band index, since the
     /// band count per page changes with the geometry and a raw index would
-    /// drift (READER-DESIGN §3's iPhone section).
+    /// drift.
     func updateGeometry(width: Double, height: Double) {
         guard isActive else { return }
         screenSize = CGSize(width: width, height: height)
@@ -284,12 +284,23 @@ final class GlassesCoordinator {
         UIApplication.shared.isIdleTimerDisabled = false
     }
 
+    /// Nil only before `enter()` has computed any bands, or against a geometry
+    /// too small to band at all — the one bounds check every reader of the
+    /// current position goes through.
+    var currentBand: Band? {
+        bands.indices.contains(currentBandIndex) ? bands[currentBandIndex] : nil
+    }
+
+    var isAtLastBand: Bool {
+        !bands.isEmpty && currentBandIndex == bands.count - 1
+    }
+
     /// The page the current band belongs to — what Mode A resumes at when
     /// leaving Mode B (`ReaderModel.recordPageRead`'s counterpart for
     /// navigation rather than sync; the iPhone rotation round-trip reads
     /// this).
     var currentPageIndex: Int {
-        bands.indices.contains(currentBandIndex) ? bands[currentBandIndex].pageIndex : 0
+        currentBand?.pageIndex ?? 0
     }
 
     /// Matched on *any* of a band's segments, not just its first page. Under
@@ -311,8 +322,7 @@ final class GlassesCoordinator {
     /// geometry-independent coordinate `updateGeometry` preserves across a
     /// recompute.
     private func currentPosition() -> (pageIndex: Int, fraction: Double) {
-        guard bands.indices.contains(currentBandIndex) else { return (0, 0) }
-        let pageIndex = bands[currentBandIndex].pageIndex
+        guard let pageIndex = currentBand?.pageIndex else { return (0, 0) }
         let bandsForPage = bandIndices(forPage: pageIndex)
         guard let start = bandsForPage.first, bandsForPage.count > 1 else { return (pageIndex, 0) }
         let fraction = Double(currentBandIndex - start) / Double(bandsForPage.count - 1)
@@ -341,12 +351,11 @@ final class GlassesCoordinator {
         interrupt()
     }
 
-    /// "Page Down: next page, skip remaining bands" (READER-DESIGN §3) — the
+    /// "Page Down: next page, skip remaining bands" — the
     /// first band of the next distinct page, wherever the traversal order
     /// (LTR/RTL) put it.
     func nextPage() {
-        guard bands.indices.contains(currentBandIndex) else { return }
-        let currentPage = bands[currentBandIndex].pageIndex
+        guard let currentPage = currentBand?.pageIndex else { return }
         guard let target = bands[currentBandIndex...].firstIndex(where: { $0.pageIndex != currentPage }) else {
             return
         }
@@ -357,7 +366,7 @@ final class GlassesCoordinator {
     /// "Page Up: previous page" — the first band of the page *before* the
     /// one currently showing, not just any earlier band on the current page.
     func previousPage() {
-        guard bands.indices.contains(currentBandIndex) else { return }
+        guard currentBand != nil else { return }
         let start = startIndex(ofBandAt: currentBandIndex)
         guard start > 0 else { return }
         currentBandIndex = startIndex(ofBandAt: start - 1)
@@ -387,17 +396,10 @@ final class GlassesCoordinator {
     /// Mode B's counterpart, plus the prefetch that makes a page boundary land
     /// on an image that's already decoded.
     private func prepareImagesForCurrentPage() {
-        guard let loader, bands.indices.contains(currentBandIndex) else { return }
-        let pageIndex = bands[currentBandIndex].pageIndex
+        guard let loader, let pageIndex = currentBand?.pageIndex else { return }
         guard pageIndex != lastPreparedPageIndex else { return }
         lastPreparedPageIndex = pageIndex
-
-        // Prune first: it cancels in-flight work outside the ring, and the
-        // neighbours prefetched below sit inside it.
-        loader.prune(around: pageIndex)
-        for neighbour in [pageIndex + 1, pageIndex - 1] where pageSources.indices.contains(neighbour) {
-            loader.prefetch(page: neighbour, source: pageSources[neighbour])
-        }
+        loader.focus(on: pageIndex, in: pageSources)
     }
 
     // MARK: - Controls
@@ -472,7 +474,7 @@ final class GlassesCoordinator {
         }
     }
 
-    /// "Slow continuous pan, speed adjustable" (READER-DESIGN §3) —
+    /// "Slow continuous pan, speed adjustable" —
     /// approximated as a fixed-interval band advance, inversely proportional
     /// to speed, rather than true sub-band scrolling; simpler, and the
     /// bands' own overlap already keeps the step from reading as a jump.
@@ -516,7 +518,7 @@ final class GlassesCoordinator {
     }
 
     /// Any input other than auto-scroll's own controls pauses it
-    /// (READER-DESIGN §3: "any keypress pauses") — but only pauses. Auto mode
+    /// — any keypress pauses, but only pauses. Auto mode
     /// stays enabled, so a page turn, a dim nudge or opening the chrome
     /// freezes the advance where it stands and leaves the pill sitting there
     /// ready to resume from whatever band the reader ended up on.
@@ -580,7 +582,7 @@ final class GlassesCoordinator {
     /// Called by `GlassesSceneDelegate.scene(_:willConnectTo:)` via
     /// `AppDelegate`'s static handoff — the only signal that a real,
     /// independent external surface exists rather than a mirror of the iPad
-    /// panel (gap 4, PLAN 6B §C).
+    /// panel.
     /// Recomputes for the same reason a rotation does: gaining or losing the
     /// external surface changes `widthFit`, and so the band geometry.
     func externalSceneDidConnect() {

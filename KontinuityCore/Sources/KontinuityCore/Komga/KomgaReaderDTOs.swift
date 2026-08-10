@@ -2,12 +2,12 @@
 //  KomgaReaderDTOs.swift
 //  KontinuityCore
 //
-//  Wire types for the reader surface (PLAN §3: OPDS v2 is the spine for reading).
+//  Wire types for the reader surface — OPDS v2 is the spine for reading.
 //  Shapes taken from `WebPubGenerator.toManifestDivina` and checked against a
-//  real manifest (KOMGA-API §2).
+//  real manifest.
 //
 //  We deliberately don't decode `metadata.readingProgression` at all —
-//  READER-DESIGN §1 pins the reader to LTR regardless, so there is nothing to do
+//  The reader pins LTR regardless, so there is nothing to do
 //  with it yet, and it would just be another optional to get wrong.
 //
 
@@ -36,7 +36,7 @@ public struct KomgaDivinaManifest: Decodable, Sendable {
 /// One entry in `readingOrder`. `width`/`height` come from Komga's own analysis
 /// and are what let the layout engine work before any image is fetched — but
 /// they're absent until Komga has analysed the book, so both must be optional
-/// rather than assumed present (READER-DESIGN §4's "zero/missing dimensions"
+/// rather than assumed present (the "zero/missing dimensions"
 /// case exists because of exactly this).
 public struct KomgaPageLink: Decodable, Sendable, Hashable {
     public let href: String
@@ -44,7 +44,7 @@ public struct KomgaPageLink: Decodable, Sendable, Hashable {
     public let width: Int?
     public let height: Int?
     /// A converted variant Komga offers when the source format isn't one iOS is
-    /// guaranteed to decode (KOMGA-API §5). Empty, not merely absent, when there
+    /// guaranteed to decode. Empty, not merely absent, when there
     /// is none — Komga only adds the key for non-recommended formats.
     public let alternate: [KomgaAlternateLink]
 

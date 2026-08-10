@@ -35,7 +35,7 @@ public struct KomgaUser: Decodable, Sendable, Hashable {
     }
 
     /// Gates `GET /opds/v2/books/{id}/file`. Without it the download engine has
-    /// to fall back to per-page fetches (PLAN §6 step 4).
+    /// to fall back to per-page fetches.
     public var canDownloadFiles: Bool {
         roles.contains("FILE_DOWNLOAD")
     }

@@ -33,7 +33,7 @@ extension KomgaSeries {
     }
 
     /// The same kind of provisional row, built from an offline grid cell
-    /// instead of a book (PLAN §11) — `SeriesDetailView` doesn't know or care
+    /// instead of a book — `SeriesDetailView` doesn't know or care
     /// which one handed it this reference; the offline branch it falls into
     /// once there behaves exactly like an empty `refreshed` does everywhere
     /// else. `libraryId` is left empty: `Book` doesn't cache which library a

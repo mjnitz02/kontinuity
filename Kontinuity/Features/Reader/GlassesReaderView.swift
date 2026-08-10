@@ -2,7 +2,7 @@
 //  GlassesReaderView.swift
 //  Kontinuity
 //
-//  Mode B (READER-DESIGN §3): the surface that owns ALL keyboard/touch
+//  Mode B: the surface that owns ALL keyboard/touch
 //  handling for glasses mode, in both configurations —
 //
 //  - `showsContent: true`, the no-external-display iPad fallback: visible,
@@ -12,8 +12,8 @@
 //    to speak of either.
 //
 //  Both route through this one view because the external `UIWindowScene` can
-//  never be key (PLAN phase 6's one architectural finding) — the Magic
-//  Keyboard's events always land on the iPad's own window, which this is.
+//  never be key — the Magic Keyboard's events always land on the iPad's own
+//  window, which this is.
 //  The keys themselves arrive through `GlassesKeyCommandCatcher` rather than
 //  SwiftUI's `onKeyPress`; see that file for why.
 //  Content only ever renders here when `showsContent` is true; when it's
@@ -31,8 +31,8 @@ struct GlassesReaderView: View {
     let onExit: () -> Void
     let onNextBook: () -> Void
 
-    /// Toggled by the centre-half tap, mirroring Mode A's `chromeVisible`
-    /// (READER-DESIGN §1's "one control model") — visible on entry, same as
+    /// Toggled by the centre-half tap, mirroring Mode A's `chromeVisible` —
+    /// one control model across both modes. Visible on entry, same as
     /// `ReaderView`'s own default.
     @State private var chromeVisible = true
 
@@ -46,7 +46,7 @@ struct GlassesReaderView: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                if showsContent, let band = currentBand, let loader = glasses.loader {
+                if showsContent, let band = glasses.currentBand, let loader = glasses.loader {
                     BandPageView(
                         band: band,
                         pageSources: glasses.pageSources,
@@ -56,7 +56,7 @@ struct GlassesReaderView: View {
                     )
                     .ignoresSafeArea()
                     .accessibilityIdentifier(AID.glassesSurface)
-                    // The dim overlay's spec (READER-DESIGN §3) is written for
+                    // The dim overlay's spec is written for
                     // the true-external-display case, where the iPad panel is
                     // already solid black; in the fallback path the iPad panel
                     // *is* the reading surface, so it gets the same overlay a
@@ -91,7 +91,7 @@ struct GlassesReaderView: View {
             // `BandPageView` above renders under `.ignoresSafeArea()`, so the
             // size fed to `BandLayout` must be measured the same way — a
             // safe-area-respecting size here would under-report what's
-            // actually on screen (PLAN 6B §C), most visibly on an iPhone in
+            // actually on screen, most visibly on an iPhone in
             // landscape where the Dynamic Island eats real width.
             .onAppear { glasses.updateGeometry(width: proxy.size.width, height: proxy.size.height) }
             .onChange(of: proxy.size) { _, newSize in
@@ -101,13 +101,9 @@ struct GlassesReaderView: View {
         .ignoresSafeArea()
     }
 
-    private var currentBand: Band? {
-        glasses.bands.indices.contains(glasses.currentBandIndex) ? glasses.bands[glasses.currentBandIndex] : nil
-    }
-
-    /// Quarters, not thirds (READER-DESIGN §1 supersedes §2): edge quarters
-    /// page, the centre half toggles chrome. The horizontal swipe (PLAN 6B
-    /// §D) is attached to this same container. This view only ever mounts
+    /// Quarters, not thirds: edge quarters page, the centre half toggles
+    /// chrome. The horizontal swipe is attached to this same container, and a
+    /// bigger centre target is more forgiving. This view only ever mounts
     /// when `showsContent` is true, so touch is always live here — there is
     /// no case where the panel shows content but touch should be refused.
     private var tapZones: some View {
@@ -142,7 +138,7 @@ struct GlassesReaderView: View {
     }
 
     /// A minimum displacement so a tap isn't eaten, and `|dx| > |dy|` so a
-    /// vertical drag isn't mistaken for a page turn (READER-DESIGN §1).
+    /// vertical drag isn't mistaken for a page turn.
     /// `advanceBand()`/`retreatBand()` already call `interrupt()`, so routing
     /// through them — rather than mutating `currentBandIndex` directly —
     /// pauses auto-scroll on a swipe the same way a keypress does, for free.
@@ -160,17 +156,16 @@ struct GlassesReaderView: View {
             }
     }
 
-    /// Mode B's edge-of-book (READER-DESIGN §1's "one control model" applied
-    /// to the forward gesture): `advanceBand()` alone just no-ops past the
+    /// Mode B's edge-of-book, the one control model applied to the forward
+    /// gesture: `advanceBand()` alone just no-ops past the
     /// last band, same as it always has for the keyboard's `→`/`Space`, which
     /// is why "N"/the chrome button were the only way to reach the next
     /// volume by touch. No two-tap toast here the way Mode A's overswipe
     /// needs one — a `TabView` bounce is ambiguous about intent the way a
     /// quarter-tap or a thresholded swipe isn't, the same reasoning that
-    /// keeps the continuous surface's footer button a single action (PLAN
-    /// §12, phase 9 known limits).
+    /// keeps the continuous surface's footer button a single action.
     private func advanceOrNextBook() {
-        if isAtLastBand {
+        if glasses.isAtLastBand {
             onNextBook()
         } else {
             glasses.advanceBand()
@@ -213,13 +208,12 @@ struct GlassesReaderView: View {
         return parts.joined(separator: " · ")
     }
 
-    /// The fallback path's chrome (PLAN 6B §C's "Chrome" work item,
-    /// READER-DESIGN §3's iPhone section): "next volume, dim, and auto-scroll
-    /// have no gesture. Those go in chrome, reached by the centre-half tap,
-    /// alongside the page indicator" — a phone in landscape has no keyboard
-    /// to reach them with otherwise. `Exit` sits in
-    /// the top-right, inside the right paging quarter, so it's kept a
-    /// sibling above the tap layer rather than shadowed by it.
+    /// The fallback path's chrome. Next volume, dim and auto-scroll have no
+    /// gesture, so they live here, reached by the centre-half tap alongside
+    /// the page indicator — a phone in landscape has no keyboard to reach
+    /// them with otherwise. `Exit` sits top-right, inside the right paging
+    /// quarter, so it's kept a sibling above the tap layer rather than
+    /// shadowed by it.
     private var chrome: some View {
         VStack {
             HStack {
@@ -257,11 +251,11 @@ struct GlassesReaderView: View {
                 // `BandLayout.isLongStrip` guesses this from page aspect and
                 // is right on everything measured so far, but it's still a
                 // guess over scraped content — this is how it gets corrected,
-                // and the correction sticks for the whole series (PLAN §12).
+                // and the correction sticks for the whole series.
                 Button {
                     glasses.toggleFlow()
                 } label: {
-                    Image(systemName: glasses.flow == .continuous ? "arrow.up.and.down" : "square.stack")
+                    Image(systemName: glasses.flow.symbolName)
                 }
                 .accessibilityIdentifier(AID.glassesFlowToggle)
                 // Narrower page, taller band, more overlap — the trade that
@@ -272,7 +266,7 @@ struct GlassesReaderView: View {
                     .accessibilityIdentifier(AID.glassesWidthFitDecrease)
                 Button { glasses.adjustWidthFit(by: 0.05) } label: { Image(systemName: "plus.magnifyingglass") }
                     .accessibilityIdentifier(AID.glassesWidthFitIncrease)
-                if isAtLastBand {
+                if glasses.isAtLastBand {
                     Button("Next volume", action: onNextBook)
                         .accessibilityIdentifier(AID.glassesNextBook)
                 }
@@ -285,10 +279,6 @@ struct GlassesReaderView: View {
         .tint(.white)
         .foregroundStyle(.white)
         .transition(.opacity)
-    }
-
-    private var isAtLastBand: Bool {
-        !glasses.bands.isEmpty && glasses.currentBandIndex == glasses.bands.count - 1
     }
 
     /// Intent to action. Which hardware keys produce which intent lives in

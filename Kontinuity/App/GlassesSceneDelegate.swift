@@ -2,7 +2,7 @@
 //  GlassesSceneDelegate.swift
 //  Kontinuity
 //
-//  Mode B's external display (PLAN phase 6, READER-DESIGN §3). SwiftUI's
+//  Mode B's external display. SwiftUI's
 //  `WindowGroup` has no concept of the external-display scene role, so this
 //  is a plain UIKit `UIWindowSceneDelegate`, routed here by `AppDelegate`'s
 //  `application(_:configurationForConnecting:options:)` whenever a scene

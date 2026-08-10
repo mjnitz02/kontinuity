@@ -2,9 +2,9 @@
 //  OfflineLibrary.swift
 //  KontinuityCore
 //
-//  PLAN §11: what "offline" browsing derives from what's already sitting in
-//  `Book` rows for anything downloaded — no new model, just grouping and
-//  filtering over the metadata cache phase 5 already writes. Pure and
+//  What "offline" browsing derives from what's already sitting in `Book` rows
+//  for anything downloaded — no new model, just grouping and filtering over the
+//  metadata cache the download engine already writes. Pure and
 //  SwiftData-free, same precedent as Sync/ProgressionSync.swift: the app
 //  layer maps a `@Query` result of `Book` into `[OfflineBookSnapshot]` at the
 //  call site, and everything past that point is unit-testable without a
@@ -51,7 +51,7 @@ public struct OfflineSeriesSummary: Sendable, Hashable, Identifiable {
     }
 }
 
-/// The two offline-fallback queries PLAN §11 needs. Every one filters to
+/// The two offline-fallback queries. Both filter to
 /// `downloadState == .downloaded` first — a book only queued or mid-download
 /// has no page files to actually read offline.
 public enum OfflineLibrary {

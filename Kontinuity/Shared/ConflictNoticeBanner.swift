@@ -2,8 +2,8 @@
 //  ConflictNoticeBanner.swift
 //  Kontinuity
 //
-//  PLAN §5: when both sides moved since the last sync, take the further page
-//  and *say so* — silently discarding a position is exactly the failure mode
+//  When both sides moved since the last sync, take the further page and *say
+//  so* — silently discarding a position is exactly the failure mode
 //  that makes the other clients frustrating. One banner, mounted once at the
 //  split view, rather than threaded through every screen that can trigger a
 //  reconciliation.

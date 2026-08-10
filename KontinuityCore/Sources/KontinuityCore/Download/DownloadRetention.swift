@@ -2,7 +2,7 @@
 //  DownloadRetention.swift
 //  KontinuityCore
 //
-//  The eviction decision table from PLAN §6: over the storage cap, evict
+//  The eviction decision table: over the storage cap, evict
 //  whole books least-recently-read first, never touching a book with
 //  unsynced local progress or the one currently open. Pure — no SwiftData,
 //  no disk access — mirroring `ProgressionSync`'s split from its engine.
@@ -18,7 +18,7 @@ public struct RetentionCandidate: Sendable, Hashable {
     /// been read is the right default.
     public let lastActivityDate: Date?
     /// A book with unsynced local progress is never evicted — deleting its
-    /// files would throw away the only copy of that progress (PLAN §6).
+    /// files would throw away the only copy of that progress.
     public let isPending: Bool
     /// The book currently open in the reader is never evicted out from under
     /// the person reading it.
@@ -38,7 +38,7 @@ public enum DownloadRetention {
         public let toEvict: [String]
         /// True when the pending/open exclusions leave nothing left to evict
         /// (or not enough of it) and usage is still over the cap — the queue
-        /// should pause and say so rather than silently thrash (PLAN §6).
+        /// should pause and say so rather than silently thrash.
         public let insufficientSpace: Bool
     }
 

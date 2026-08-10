@@ -2,15 +2,18 @@
 //  PageLayout.swift
 //  KontinuityCore
 //
-//  Pure page-layout math — no UIKit, fully unit-testable (READER-DESIGN §4).
-//  `PageLayout` covers Mode A (iPad panel reading): `.fitPage` and `.spread`,
-//  grouping whole pages into indices. `BandLayout` below is Mode B (glasses
-//  reading, phase 6): it needs sub-page rects, not whole-page groups, so it's
-//  a separate namespace rather than a third `LayoutMode` case shoehorned into
-//  `spreads(for:mode:progression:)`'s `[PageSpread]` return shape.
-//  `BandLayout` also covers the long-strip/web comic case (PLAN §12) via
-//  `BandFlow.continuous`, which bands *across* page boundaries — Mode A's own
-//  continuous scroll surface is separate work and doesn't live here.
+//  Pure page-layout math — no UIKit, fully unit-testable. Three namespaces,
+//  one per reading surface:
+//
+//  - `PageLayout` — Mode A's paged panel: `.fitPage` and `.spread`, grouping
+//    whole pages into turnable units.
+//  - `BandLayout` — Mode B, glasses reading. It needs sub-page rects rather
+//    than whole-page groups, so it's separate rather than a third `LayoutMode`
+//    case shoehorned into `spreads(for:mode:progression:)`'s return shape. Its
+//    `BandFlow.continuous` also bands *across* page boundaries, for web comics
+//    sliced into fixed-height chunks.
+//  - `ContinuousScrollLayout` — Mode A's vertical scroll surface: manifest
+//    geometry to cumulative on-screen offsets and back.
 //
 
 import Foundation
@@ -26,14 +29,14 @@ public struct PageGeometry: Sendable, Hashable {
     }
 
     /// False when Komga hasn't analysed this page yet — a manifest entry with
-    /// no `width`/`height` (KOMGA-API §2). Such a page can't be paired into a
+    /// no `width`/`height`. Such a page can't be paired into a
     /// spread since its aspect ratio is unknown.
     public var isKnown: Bool {
         width > 0 && height > 0
     }
 }
 
-/// Pinned to `.ltr` at every call site today (READER-DESIGN §1); the parameter
+/// Pinned to `.ltr` at every call site today; the parameter
 /// exists so flipping it later is a real switch, not a rewrite.
 public enum ReadingProgression: Sendable {
     case ltr
@@ -73,7 +76,7 @@ public enum PageLayout {
     }
 
     /// A page whose aspect ratio marks it as a pre-made double-page spread
-    /// rather than a single portrait page (READER-DESIGN §2). Unknown
+    /// rather than a single portrait page. Unknown
     /// dimensions are never treated as a spread — there's nothing to detect.
     public static func isDoubleSpread(_ page: PageGeometry) -> Bool {
         page.isKnown && page.width / page.height > 1.0
@@ -140,7 +143,7 @@ public struct BandSegment: Sendable, Hashable {
 
 /// One full-bleed, readable-scale viewport — the unit Mode B's reader walks
 /// through with a single integer index, the same way Mode A walks
-/// `[PageSpread]` (READER-DESIGN §3-4).
+/// `[PageSpread]`.
 public struct Band: Sendable, Hashable {
     /// In render order, top to bottom. Never empty.
     public let segments: [BandSegment]
@@ -161,8 +164,8 @@ public struct Band: Sendable, Hashable {
     /// *P* is then the one that also carries the top of *P+1*, i.e. the band in
     /// which *P*'s final pixel row is genuinely on screen. Calling the
     /// *dominant* or *last* page the band's page would mark *P* read while a
-    /// sliver of it had never been displayed, which is the exact
-    /// over-reporting READER-DESIGN §5 exists to prevent.
+    /// sliver of it had never been displayed — exactly the over-reporting
+    /// progress tracking has to avoid.
     public var pageIndex: Int {
         segments[0].pageIndex
     }
@@ -186,7 +189,7 @@ public struct Band: Sendable, Hashable {
     }
 }
 
-/// Whether bands stop at page boundaries or run through them (PLAN §12).
+/// Whether bands stop at page boundaries or run through them.
 public enum BandFlow: Sendable, Hashable {
     /// Every band lies within one page. Right for paged manga, where a page
     /// boundary is a deliberate artistic break.
@@ -197,8 +200,8 @@ public enum BandFlow: Sendable, Hashable {
     case continuous
 }
 
-/// Mode B's layout math (READER-DESIGN §3-4): fit page *width*, then walk
-/// down the page in overlapping bands instead of shrinking the whole page to
+/// Mode B's layout math: fit page *width*, then walk down the page in
+/// overlapping bands instead of shrinking the whole page to
 /// fit a 16:9 external display. Pure — no UIKit, no screen queried directly;
 /// the caller supplies the target size.
 public enum BandLayout {
@@ -287,7 +290,7 @@ public enum BandLayout {
     }
 
     /// Median page aspect (width/height) below this reads as a long strip
-    /// rather than a page. Measured against the dev library (PLAN §12): every
+    /// rather than a page. Measured against the dev library: every
     /// paged manga page sits at 0.651 or above, while the two web comics'
     /// medians are 0.510 (gutter-sliced) and 0.180 (fixed 5000px slices). The
     /// gap is wide enough to key off, but this is still a heuristic over
@@ -297,9 +300,8 @@ public enum BandLayout {
 
     /// The default `BandFlow` for a book, from manifest geometry alone —
     /// Komga's `readingDirection` is `""` (unset) on the web comics in the dev
-    /// library exactly as it is on the manga, so READER-DESIGN §4's "`ttb`
-    /// progression" trigger doesn't exist in practice and geometry is the only
-    /// signal actually present.
+    /// library exactly as it is on the manga, so a `ttb`-progression trigger
+    /// doesn't exist in practice and geometry is the only signal present.
     public static func isLongStrip(_ pages: [PageGeometry]) -> Bool {
         let aspects = pages
             .filter { $0.isKnown && !PageLayout.isDoubleSpread($0) }
@@ -313,20 +315,19 @@ public enum BandLayout {
         return median < longStripAspectThreshold
     }
 
-    /// The one place `override ?? isLongStrip(...)` is spelled out — Mode B's
-    /// `enter()` and Mode A's `ReaderModel` both need exactly this decision
-    /// (PLAN §12: "Mode A should read the same override, not invent a second
-    /// one"), and a heuristic default plus a per-series correction is worth
-    /// keeping as one pure, tested function rather than two copies that could
-    /// drift.
+    /// The one place `override ?? isLongStrip(...)` is spelled out. Mode B's
+    /// `enter()` and Mode A's `ReaderModel` both need exactly this decision and
+    /// must read the same override rather than inventing a second one, so a
+    /// heuristic default plus a per-series correction stays one pure, tested
+    /// function rather than two copies that could drift.
     public static func resolvedFlow(for pages: [PageGeometry], override: BandFlow?) -> BandFlow {
         override ?? (isLongStrip(pages) ? .continuous : .perPage)
     }
 
     /// A double-spread page or one with unknown dimensions never gets
     /// banded — same "stands alone" rule `PageLayout.spreads` uses, and the
-    /// same fallback that keeps unknown/zero dimensions from dividing by
-    /// zero (READER-DESIGN §4: "degrade to `.fitPage`").
+    /// same fallback that keeps unknown/zero dimensions from dividing by zero,
+    /// degrading to a whole-page fit.
     private static let wholePageRect = BandRect(x: 0, y: 0, width: 1, height: 1)
 
     /// Below this, a segment is the arithmetic residue of a band landing
@@ -433,12 +434,8 @@ public enum BandLayout {
         // width still shares one coordinate space — the same normalisation the
         // renderer applies when it width-fits each page to the container.
         let heights = indices.map { pages[$0].height / pages[$0].width }
-        var offsets: [Double] = []
-        var total = 0.0
-        for height in heights {
-            offsets.append(total)
-            total += height
-        }
+        let offsets = ContinuousScrollLayout.offsets(for: heights)
+        let total = heights.reduce(0, +)
 
         // The run-scale counterpart of "the page already fits": show all of it.
         guard visibleHeight < total else {
@@ -484,7 +481,7 @@ public enum BandLayout {
     }
 }
 
-/// Mode A's continuous scroll surface (PLAN §12, phase 9B) — a vertical
+/// Mode A's continuous scroll surface — a vertical
 /// `ScrollView` of width-fit pages replacing the paging `TabView` when
 /// `BandLayout.resolvedFlow` says `.continuous`. Pure math only: mapping the
 /// manifest's per-page geometry to cumulative on-screen offsets and back.
@@ -518,8 +515,8 @@ public enum ContinuousScrollLayout {
     /// yet scrolled past the top of the viewport. Equivalently, this is the
     /// page you determine "has passed" by testing each one's bottom against
     /// the scroll offset in turn — the same "count as read only once truly
-    /// passed" rule READER-DESIGN §5 already applies to Mode B's bands,
-    /// applied here to a scroll offset instead of a band index. Never reports
+    /// passed" rule Mode B's bands already follow, applied to a scroll offset
+    /// instead of a band index. Never reports
     /// a page as current until its predecessor has genuinely scrolled by, so
     /// this doesn't over-report the moment the reader opens.
     public static func currentPageIndex(offsets: [Double], heights: [Double], scrollOffset: Double) -> Int {

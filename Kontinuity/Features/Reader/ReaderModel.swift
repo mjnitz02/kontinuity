@@ -4,13 +4,13 @@
 //
 //  Owns the manifest and the current position. Progress sync itself — the
 //  outbox, the debounce, the 409/offline handling — lives in
-//  `ProgressionSyncEngine` (phase 4); this model just records page turns into
+//  `ProgressionSyncEngine`; this model just records page turns into
 //  it and asks it to resolve where to resume, rather than trusting whatever
 //  `book.readProgress` happened to be when this screen was reached.
 //
-//  READER-DESIGN §1: a downloaded book reads purely from disk, no network at
-//  all — `load()` checks `LocalBookStore` first and only falls back to the
-//  network DIVINA manifest when the book isn't downloaded.
+//  A downloaded book reads purely from disk, no network at all — `load()`
+//  checks `LocalBookStore` first and only falls back to the network DIVINA
+//  manifest when the book isn't downloaded.
 //
 
 import KontinuityCore
@@ -33,7 +33,7 @@ final class ReaderModel {
     private(set) var isLoading = true
     private(set) var nextBook: KomgaBook?
     /// Whether Mode A renders the paging `TabView` or the continuous scroll
-    /// surface (PLAN §12) — resolved once at load time from
+    /// surface — resolved once at load time from
     /// `BandLayout.resolvedFlow`, the same decision Mode B's
     /// `GlassesCoordinator.enter()` makes, read off the same per-series
     /// override so the two never disagree.
@@ -97,7 +97,7 @@ final class ReaderModel {
             pageSources = manifest.readingOrder.map { .remote($0) }
             finishLoad()
         } catch {
-            loadError = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
+            loadError = error.userMessage
             isLoading = false
         }
     }
@@ -154,8 +154,8 @@ final class ReaderModel {
 
     /// Pushes any unpushed progress immediately rather than waiting for the
     /// engine's idle debounce — for the reader dismissing. Also the moment a
-    /// just-finished, now-synced download becomes eligible for auto-remove
-    /// (PLAN §6), so it rides along here too.
+    /// just-finished, now-synced download becomes eligible for auto-remove, so
+    /// it rides along here too.
     func flushProgress() {
         Task {
             await sync.flush()
@@ -181,17 +181,17 @@ final class ReaderModel {
 
     private func recomputeSpreads() {
         // TODO: read the series' reading direction once RTL is supported
-        // (READER-DESIGN §1) — pinned to LTR everywhere for now.
+        // — pinned to LTR everywhere for now.
         spreads = PageLayout.spreads(for: pageGeometries, mode: mode, progression: .ltr)
     }
 
     /// Resolves via the sync engine rather than trusting `book.readProgress`
     /// outright — that snapshot may be stale if this device has unsynced or
-    /// conflicting local progress for the book (phase 4's whole point).
+    /// conflicting local progress for the book, which is what sync exists for.
     ///
     /// A completed book always restarts at page 1 rather than resuming on its
-    /// stored page — Komga's completion is implicit (`position == pagesCount`,
-    /// KOMGA-API §4), so a "Read" book's stored page is the last page, and
+    /// stored page — Komga's completion is implicit (`position == pagesCount`),
+    /// so a "Read" book's stored page is the last page, and
     /// resuming there is indistinguishable from never letting the reader move
     /// past it (this is also what stranded the end-of-book advance: a "Read"
     /// next book opened already at its own last spread).
@@ -205,7 +205,7 @@ final class ReaderModel {
     // MARK: - Progress
 
     /// Records the page turn with the sync engine, which writes it locally at
-    /// once and owns the debounced push from here (PLAN §5).
+    /// once and owns the debounced push from here.
     private func sendProgress() {
         guard spreads.indices.contains(currentSpreadIndex),
               let lastPageIndex = spreads[currentSpreadIndex].pageIndices.max()
@@ -213,13 +213,12 @@ final class ReaderModel {
         recordProgress(pageIndex: lastPageIndex)
     }
 
-    /// The progression entry point for both surfaces that have no discrete
-    /// page turn to hang `currentSpreadIndex.didSet` off of: Mode B
-    /// (READER-DESIGN §5, PLAN 6B §C gap 1), called when
+    /// The progression entry point for both surfaces with no discrete page
+    /// turn to hang `currentSpreadIndex.didSet` off of: Mode B, called when
     /// `GlassesCoordinator.currentBandIndex` reaches the **last** band of a
     /// page — bands don't correspond 1:1 with `spreads` — and Mode A's
-    /// continuous scroll surface (PLAN §12), called on a debounced scroll
-    /// offset. Shares `recordProgress` with the paged path, so `lastSentPage`
+    /// continuous scroll surface, called on a debounced scroll offset. Shares
+    /// `recordProgress` with the paged path, so `lastSentPage`
     /// de-duplication covers all three: re-entering a page or scrolling
     /// backward costs nothing extra.
     func recordPageRead(pageIndex: Int) {
@@ -237,7 +236,7 @@ final class ReaderModel {
     }
 
     /// Komga stores but never validates the DIVINA locator's href/type
-    /// against the manifest (KOMGA-API §4), so reading offline reconstructs
+    /// against the manifest, so reading offline reconstructs
     /// the same href the network manifest would have given rather than
     /// needing one persisted on disk.
     private func progressionLocator(forPageIndex index: Int, page: Int) -> (href: String, mediaType: String) {
@@ -252,7 +251,7 @@ final class ReaderModel {
     // MARK: - Edge of book
 
     /// Resolves the next volume in the series, once, for the "swiping past the
-    /// last page" affordance (READER-DESIGN §2). A full ordered fetch rather
+    /// last page" affordance. A full ordered fetch rather
     /// than an incremental one — fine for a home library, and simpler than
     /// trying to page around a known id.
     func loadNextBookIfNeeded() async {

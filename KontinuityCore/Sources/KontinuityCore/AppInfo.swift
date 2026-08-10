@@ -19,6 +19,6 @@ public enum AppInfo {
 
     /// Minimum Komga server version this client is built against. The OPDS v2
     /// DIVINA manifest and the Progression API both predate this, but 1.25 is
-    /// what the behaviour in `.claude/KOMGA-API.md` was read from.
+    /// what the documented server behaviour was read from.
     public static let minimumKomgaVersion = "1.25.0"
 }

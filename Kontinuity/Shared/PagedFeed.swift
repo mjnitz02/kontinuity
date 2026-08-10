@@ -22,7 +22,7 @@ enum FeedPhase: Equatable {
     case loadingMore
     /// `isOffline` mirrors `KomgaError.isOffline` on whatever failed the
     /// request — an offline-classified browse screen falls back to a
-    /// locally-derived view instead of this error (PLAN §11); a 401 or 500
+    /// locally-derived view instead of this error; a 401 or 500
     /// still shows it as-is.
     case failed(String, isOffline: Bool)
 
@@ -52,8 +52,8 @@ final class PagedFeed<Element: Identifiable & Hashable & Sendable & Decodable> {
 
     private var fetch: ((Int) async throws -> KomgaPage<Element>)?
     /// Called with every fully-replaced page 0, not on a "load more" append —
-    /// what a manual refresh means for PLAN §5's "read progress for what's in
-    /// view" reconciliation. `PagedFeed` doesn't know what a `KomgaBook` is,
+    /// what a manual refresh means for reconciling read progress across
+    /// what's in view. `PagedFeed` doesn't know what a `KomgaBook` is,
     /// so it just hands the items back to whoever does.
     private var didReplace: (([Element]) -> Void)?
     private var nextPage: Int?
@@ -128,11 +128,10 @@ final class PagedFeed<Element: Identifiable & Hashable & Sendable & Decodable> {
                 phase = .loaded
             } catch {
                 guard !Task.isCancelled, !(error is CancellationError) else { return }
-                let komgaError = error as? KomgaError
-                let message = komgaError?.errorDescription ?? error.localizedDescription
                 // A failed *further* page shouldn't blank a list the user is
                 // reading; keep the items and report the failure alongside.
-                phase = .failed(message, isOffline: komgaError?.isOffline ?? false)
+                let isOffline = (error as? KomgaError)?.isOffline ?? false
+                phase = .failed(error.userMessage, isOffline: isOffline)
             }
         }
     }

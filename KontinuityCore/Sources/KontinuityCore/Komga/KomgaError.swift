@@ -4,7 +4,7 @@
 //
 //  One error type for the whole Komga boundary. The status codes that carry
 //  protocol meaning get their own cases — notably 409, which the sync engine
-//  treats as "server is ahead", not as a failure (see .claude/KOMGA-API.md §4).
+//  treats as "server is ahead", not as a failure.
 //
 
 import Foundation
@@ -24,6 +24,15 @@ public enum KomgaError: Error, Equatable, Sendable {
     case unexpectedStatus(code: Int, body: String?)
     case transport(code: URLError.Code, description: String)
     case decoding(description: String)
+}
+
+public extension Error {
+    /// What to put in front of a user: `KomgaError`'s own wording where there is
+    /// one, Foundation's fallback otherwise. Every failure the UI reports goes
+    /// through here, so a new case is worded once rather than at each screen.
+    var userMessage: String {
+        (self as? KomgaError)?.errorDescription ?? localizedDescription
+    }
 }
 
 extension KomgaError: LocalizedError {

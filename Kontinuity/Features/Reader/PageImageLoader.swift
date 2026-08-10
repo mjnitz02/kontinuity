@@ -6,7 +6,7 @@
 //  keyed by page index rather than a thumbnail target, and downsampled to
 //  reader-sized pixels rather than grid-cell-sized ones.
 //
-//  READER-DESIGN §1's decode budget: never hold a whole book decoded. Only the
+//  The decode budget: never hold a whole book decoded. Only the
 //  page ring around the current position is kept; ``prune(around:)`` drops the
 //  rest as the reader turns pages.
 //
@@ -29,8 +29,7 @@ final class PageImageLoader {
     private var cachedIndices: Set<Int> = []
 
     /// Generous rather than exact: recomputing per zoom level isn't worth the
-    /// complexity for a home-server reader (READER-DESIGN §1 notes this as a
-    /// deliberate simplification for phase 3). The 1.25 factor is measured
+    /// complexity for a home-server reader. The 1.25 factor is measured
     /// against the screen's *long* side, so a whole-page-fit page still lands
     /// comfortably above panel resolution with headroom for Mode A's
     /// pinch-zoom — the 2x this used to carry meant a 4776px ceiling on an
@@ -45,8 +44,7 @@ final class PageImageLoader {
     /// 900x5000 web comic slice against an 11" iPad's 3025px budget decodes to
     /// 544x3025 and is then drawn 2420px wide — a 4.4x upscale of an image
     /// that was 900px wide to start with. Every paged manga page is under the
-    /// ceiling, so this never fired until the library gained long strips
-    /// (PLAN §12).
+    /// ceiling, so this never fired until the library gained long strips.
     private let targetWidthPixels: CGFloat
 
     /// `nil` defaults rather than `UIScreen.main` in the signature: a default
@@ -132,12 +130,23 @@ final class PageImageLoader {
 
     /// Fire-and-forget warming for a page the reader is about to reach, so a
     /// page boundary doesn't wait on a decode that could have happened while
-    /// the previous page was still being read (READER-DESIGN §3's page
-    /// transition). Dedupes through `image(forPage:source:)`'s own `inFlight`
+    /// the previous page was still being read. Dedupes through
+    /// `image(forPage:source:)`'s own `inFlight`
     /// map, so calling it repeatedly costs nothing.
     func prefetch(page index: Int, source: PageSource) {
         guard cache.object(forKey: NSNumber(value: index)) == nil, inFlight[index] == nil else { return }
         Task { _ = await image(forPage: index, source: source) }
+    }
+
+    /// Moves the decode ring to `page`: drop what's outside it, warm the pages
+    /// either side. Every reading surface does exactly this when its position
+    /// changes, so the ordering — prune first, since it cancels work outside
+    /// the ring the prefetches then sit inside — is settled here once.
+    func focus(on page: Int, in sources: [PageSource]) {
+        prune(around: page)
+        for neighbour in [page + 1, page - 1] where sources.indices.contains(neighbour) {
+            prefetch(page: neighbour, source: sources[neighbour])
+        }
     }
 
     /// Drops cached and in-flight entries outside `current ± radius`, so the
@@ -162,8 +171,8 @@ final class PageImageLoader {
 
     /// Tries the primary href first; falls back to an alternate only if the
     /// primary fails to decode. Decode-based, not a guess from `type` — Komga
-    /// only adds an alternate for formats it flagged as non-recommended
-    /// (KOMGA-API §5), and most primaries decode fine on iOS anyway.
+    /// only adds an alternate for formats it flagged as non-recommended, and
+    /// most primaries decode fine on iOS anyway.
     private nonisolated static func fetch(
         link: KomgaPageLink,
         service: any KomgaServing,

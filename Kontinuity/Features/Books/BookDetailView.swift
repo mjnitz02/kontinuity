@@ -2,9 +2,8 @@
 //  BookDetailView.swift
 //  Kontinuity
 //
-//  Where a tapped book lands. Phase 3 turns the Read button into the reader; for
-//  now it's the honest end of the browse path — everything known about a book,
-//  including why it might not be readable.
+//  Where a tapped book lands: everything known about a book, including why it
+//  might not be readable, plus the ways in — read, download, mark read.
 //
 
 import KontinuityCore
@@ -121,8 +120,9 @@ struct BookDetailView: View {
                 if let released = current.metadata.releaseDate?.date {
                     detailRow("Released", released.formatted(date: .abbreviated, time: .omitted))
                 }
-                if !authors.isEmpty {
-                    detailRow("Authors", authors)
+                let credits = current.metadata.authors.creditLine()
+                if !credits.isEmpty {
+                    detailRow("Authors", credits)
                 }
             }
             .font(.caption)
@@ -177,7 +177,7 @@ struct BookDetailView: View {
 
         case .queued, .downloading, .decompressing:
             HStack(spacing: 8) {
-                ProgressView(value: downloadProgressFraction).frame(width: 60)
+                ProgressView(value: downloadRow?.downloadProgressFraction ?? 0).frame(width: 60)
                 Button("Cancel") { session.downloads.cancel(bookID: current.id) }
             }
             .accessibilityIdentifier(AID.bookDetailDownload)
@@ -191,11 +191,6 @@ struct BookDetailView: View {
             .buttonStyle(.bordered)
             .accessibilityIdentifier(AID.bookDetailDownload)
         }
-    }
-
-    private var downloadProgressFraction: Double {
-        guard let row = downloadRow, row.expectedBytes > 0 else { return 0 }
-        return min(1, max(0, Double(row.downloadedBytes) / Double(row.expectedBytes)))
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {
@@ -231,7 +226,7 @@ struct BookDetailView: View {
                     try await session.service.markUnread(bookID: bookID)
                 }
             } catch {
-                readStateError = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
+                readStateError = error.userMessage
                 await reload()
             }
         }
@@ -248,7 +243,7 @@ struct BookDetailView: View {
     }
 
     private func reload() async {
-        // Manual refresh trigger #5 (PLAN §5): push anything pending first, so
+        // Manual refresh trigger #5: push anything pending first, so
         // the fetch that follows reflects this device's own latest write too.
         await session.flushAndReconcileDownloads()
         guard let fetched = try? await session.service.book(id: book.id) else { return }
@@ -265,13 +260,6 @@ struct BookDetailView: View {
         default:
             "Komga hasn't analysed this book yet."
         }
-    }
-
-    private var authors: String {
-        let writers = current.metadata.authors.filter { $0.role == "writer" }
-        let names = (writers.isEmpty ? current.metadata.authors : writers).map(\.name)
-        var seen = Set<String>()
-        return names.filter { seen.insert($0).inserted }.prefix(3).joined(separator: ", ")
     }
 
     private var summary: String {
