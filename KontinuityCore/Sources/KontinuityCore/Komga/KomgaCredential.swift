@@ -2,7 +2,7 @@
 //  KomgaCredential.swift
 //  KontinuityCore
 //
-//  Two auth modes, both header-based. See .claude/KOMGA-API.md §1: Komga
+//  Two auth modes, both header-based. Komga
 //  installs the X-API-Key filter globally, so the same key authenticates
 //  /api/v1, /api/v2 and /opds/v2 alike. Basic exists only to bootstrap a key.
 //

@@ -2,7 +2,7 @@
 //  LocalBookStore.swift
 //  KontinuityCore
 //
-//  PLAN §4: downloaded pages live as files on disk, not in SwiftData —
+//  Downloaded pages live as files on disk, not in SwiftData —
 //  `Application Support/books/{bookId}/pages/` plus a `manifest.json`
 //  recording each page's dimensions and media type (carried over from the
 //  network DIVINA manifest at download time, not re-derived). The reader
@@ -38,7 +38,7 @@ public struct LocalBookManifest: Codable, Sendable, Hashable {
 }
 
 /// One decompressed page, ready to be written. `width`/`height` come from the
-/// network DIVINA manifest fetched just before the file (PLAN §6 step 3), not
+/// network DIVINA manifest fetched just before the file, not
 /// from probing the image after the fact.
 public struct LocalPageWrite: Sendable {
     public let data: Data

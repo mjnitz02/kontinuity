@@ -3,7 +3,7 @@
 //  KontinuityCore
 //
 //  The single persisted server record (multi-server is an explicit non-goal —
-//  PLAN §1). This is also where the SwiftData store starts; phases 2+ add
+//  a non-goal). This is also where the SwiftData store starts; later models add
 //  Series/Book/PageRef/DownloadJob alongside it.
 //
 
@@ -19,7 +19,7 @@ public final class Server {
     /// Stable per-install identifier sent as `device.id` on every progression
     /// write. Minted once and never regenerated — Komga uses it to attribute
     /// read progress, so a new value each launch would make the server's
-    /// device history useless (KOMGA-API §4).
+    /// device history useless.
     public var deviceID: UUID
 
     /// Sent as `device.name`. User-visible on Komga's read-progress rows.

@@ -2,7 +2,7 @@
 //  ProgressionSyncEngine.swift
 //  Kontinuity
 //
-//  The impure half of PLAN §5's sync design: persists `Book` rows and talks to
+//  The impure half of the sync design: persists `Book` rows and talks to
 //  `KomgaServing`, deferring every actual decision to the pure
 //  `ProgressionSync.reconcile` in KontinuityCore. Same split as
 //  `ReaderModel`/`PageLayout` — the policy is provable without a simulator,
@@ -19,11 +19,11 @@ import SwiftData
 @Observable
 final class ProgressionSyncEngine {
     private let service: any KomgaServing
-    private let modelContext: ModelContext
+    private let books: BookStore
     private let device: KomgaDevice
 
     /// The most recent "both sides moved" event, for a small non-modal note
-    /// (PLAN §5) — never silently discarding a position is the whole point of
+    /// — never silently discarding a position is the whole point of
     /// this phase. Self-clears a few seconds after being set.
     private(set) var conflictNotice: ConflictNotice?
 
@@ -35,23 +35,23 @@ final class ProgressionSyncEngine {
 
     init(service: any KomgaServing, modelContext: ModelContext, device: KomgaDevice) {
         self.service = service
-        self.modelContext = modelContext
+        books = BookStore(modelContext: modelContext)
         self.device = device
         startNetworkMonitor()
     }
 
-    // MARK: - Recording (PLAN §5: local writes are authoritative and immediate)
+    // MARK: - Recording (local writes are authoritative and immediate)
 
     /// Writes the new position synchronously — the reader never awaits the
     /// network, not even while streaming — then schedules a debounced flush.
     func recordPageTurn(bookID: String, page: Int, pageHref: String, mediaType: String, at date: Date = .now) {
-        let book = fetchOrCreate(bookID: bookID)
+        let book = books.findOrCreate(bookID)
         book.localPage = page
         book.localReadDate = date
         book.pageHref = pageHref
         book.mediaType = mediaType
         book.isPending = true
-        try? modelContext.save()
+        books.save()
         scheduleFlush()
     }
 
@@ -64,13 +64,13 @@ final class ProgressionSyncEngine {
     /// at all — nothing here needs resetting, and the next fetch already
     /// carries the real server state.
     func applyExplicitReadState(bookID: String, read: Bool, pagesCount: Int, at date: Date = .now) {
-        guard let existing = fetchExisting(bookID: bookID) else { return }
+        guard let existing = books.find(bookID) else { return }
         existing.localPage = read ? pagesCount : 0
         existing.localReadDate = date
         existing.serverPage = read ? pagesCount : nil
         existing.serverReadDate = read ? date : nil
         existing.isPending = false
-        try? modelContext.save()
+        books.save()
     }
 
     private func scheduleFlush() {
@@ -94,7 +94,7 @@ final class ProgressionSyncEngine {
         flushTask?.cancel()
         flushTask = nil
 
-        for book in fetchPending() {
+        for book in books.pending() {
             do {
                 let write = ProgressionWrite(
                     page: book.localPage,
@@ -108,7 +108,7 @@ final class ProgressionSyncEngine {
                 book.serverReadDate = book.localReadDate
             } catch KomgaError.conflict {
                 // The clock guard rejected us: the server is ahead. Never
-                // retry — that loops forever (PLAN §5) — so clear the pending
+                // retry — that loops forever — so clear the pending
                 // flag unconditionally, then best-effort adopt the real
                 // value. If the follow-up fetch also fails, the next
                 // `reconcile(with:)` call corrects it.
@@ -127,16 +127,16 @@ final class ProgressionSyncEngine {
                 // Anything else: leave pending, retry on the next trigger.
             }
         }
-        try? modelContext.save()
+        books.save()
     }
 
     // MARK: - Reconciliation
 
     /// Reconciles a freshly-fetched `KomgaBook` against this device's local
     /// row, if it has one. Free of any extra network call — `readProgress`
-    /// already rode along on whatever fetch produced `book` (KOMGA-API §3).
+    /// already rode along on whatever fetch produced `book`.
     func reconcile(with book: KomgaBook) {
-        guard let existing = fetchExisting(bookID: book.id) else { return }
+        guard let existing = books.find(book.id) else { return }
         let local = LocalProgress(
             page: existing.localPage,
             readDate: existing.localReadDate,
@@ -162,7 +162,7 @@ final class ProgressionSyncEngine {
             scheduleFlush()
         }
 
-        try? modelContext.save()
+        books.save()
     }
 
     /// Reconciles `book`, then returns the page this device should resume
@@ -171,7 +171,7 @@ final class ProgressionSyncEngine {
     /// from the server.
     func resolvedStartPage(for book: KomgaBook) -> Int? {
         reconcile(with: book)
-        return fetchExisting(bookID: book.id)?.localPage
+        return books.find(book.id)?.localPage
     }
 
     private func applyBothMoved(
@@ -192,7 +192,7 @@ final class ProgressionSyncEngine {
             // Reconciliation decided local wins regardless of raw clock
             // order; bump the timestamp so the eventual push satisfies
             // Komga's monotonic guard instead of 409-ing against a decision
-            // already made here (KOMGA-API §4).
+            // already made here.
             if let serverReadDate = book.readProgress?.readDate, row.localReadDate <= serverReadDate {
                 row.localReadDate = serverReadDate.addingTimeInterval(1)
             }
@@ -211,36 +211,7 @@ final class ProgressionSyncEngine {
         }
     }
 
-    // MARK: - Fetch helpers
-
-    /// Filters in plain Swift rather than a `#Predicate` — a library's worth
-    /// of `Book` rows is small, and fetching the lot sidesteps a real crash
-    /// observed in SwiftData's predicate compilation when several in-memory
-    /// containers are queried concurrently (a test-harness scenario; a real
-    /// app session only ever has one, but the fetch shape shouldn't depend on
-    /// that).
-    private func allBooks() -> [Book] {
-        (try? modelContext.fetch(FetchDescriptor<Book>())) ?? []
-    }
-
-    private func fetchExisting(bookID: String) -> Book? {
-        allBooks().first { $0.id == bookID }
-    }
-
-    private func fetchOrCreate(bookID: String) -> Book {
-        if let existing = fetchExisting(bookID: bookID) {
-            return existing
-        }
-        let book = Book(id: bookID, localPage: 0, localReadDate: .now, pageHref: "", mediaType: "")
-        modelContext.insert(book)
-        return book
-    }
-
-    private func fetchPending() -> [Book] {
-        allBooks().filter(\.isPending)
-    }
-
-    // MARK: - Network regained (PLAN §5's fifth flush trigger)
+    // MARK: - Network regained (the fifth flush trigger)
 
     /// Piped through an `AsyncStream` rather than capturing `self` in
     /// `pathUpdateHandler` directly — that closure's type is `@Sendable` and
@@ -272,7 +243,7 @@ final class ProgressionSyncEngine {
 }
 
 /// A small, non-modal "your progress on another device won and we kept it"
-/// or "-and we kept yours-" event, per PLAN §5's "say so" requirement.
+/// or "-and we kept yours-" event. Resolving silently is the failure mode.
 struct ConflictNotice: Equatable, Identifiable {
     let id = UUID()
     let bookID: String

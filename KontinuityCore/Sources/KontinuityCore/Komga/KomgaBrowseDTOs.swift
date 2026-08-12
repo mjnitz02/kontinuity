@@ -2,13 +2,13 @@
 //  KomgaBrowseDTOs.swift
 //  KontinuityCore
 //
-//  Wire types for the browse surface (PLAN §2: read-status queries go through
-//  /api/v1, not OPDS v2). Shapes taken from Komga 1.25.0's LibraryDto.kt /
+//  Wire types for the browse surface — read-status queries go through /api/v1,
+//  not OPDS v2. Shapes taken from Komga 1.25.0's LibraryDto.kt /
 //  SeriesDto.kt / BookDto.kt and checked against a live instance's responses.
 //
 //  These decode a deliberate subset. Komga sends a `*Lock` boolean beside every
 //  metadata field for its own editing UI, and metadata editing is an explicit
-//  non-goal (PLAN §1) — decoding them would be a hundred properties of pure
+//  non-goal — decoding them would be a hundred properties of pure
 //  liability. Unknown keys are ignored by Codable, so omission is free.
 //
 
@@ -142,8 +142,8 @@ public struct KomgaSeriesMetadata: Decodable, Sendable, Hashable {
     /// than `booksCount` for an ongoing series that isn't fully acquired.
     public let totalBookCount: Int?
     /// `""` when unset, not absent — Komga's REST DTO types this as a non-null
-    /// String, unlike the OPDS manifest where the key is omitted entirely
-    /// (KOMGA-API §2). ``readingDirection`` turns that back into an optional.
+    /// String, unlike the OPDS manifest where the key is omitted entirely.
+    /// ``readingDirection`` turns that back into an optional.
     public let readingDirection: String
 
     public init(
@@ -172,8 +172,8 @@ public struct KomgaSeriesMetadata: Decodable, Sendable, Hashable {
         self.readingDirection = readingDirection
     }
 
-    /// Nil when the series has no direction set. The reader pins LTR regardless
-    /// (READER-DESIGN §1); this is kept so that stays a switch, not a rewrite.
+    /// Nil when the series has no direction set. The reader pins LTR
+    /// regardless; this is kept so that stays a switch, not a rewrite.
     public var direction: KomgaReadingDirection? {
         KomgaReadingDirection(rawValue: readingDirection)
     }
@@ -210,6 +210,19 @@ public struct KomgaAuthor: Decodable, Sendable, Hashable {
     }
 }
 
+public extension [KomgaAuthor] {
+    /// The one-line credit both detail screens show. Komga aggregates every
+    /// role across a series' books, so the same person appears six times —
+    /// writers first, de-duplicated, capped, falling back to all roles for a
+    /// work credited to nobody as writer.
+    func creditLine(limit: Int = 3) -> String {
+        let writers = filter { $0.role == "writer" }
+        let names = (writers.isEmpty ? self : writers).map(\.name)
+        var seen = Set<String>()
+        return names.filter { seen.insert($0).inserted }.prefix(limit).joined(separator: ", ")
+    }
+}
+
 // MARK: - Book
 
 public struct KomgaBook: Decodable, Sendable, Hashable, Identifiable {
@@ -225,7 +238,7 @@ public struct KomgaBook: Decodable, Sendable, Hashable, Identifiable {
     public let media: KomgaMedia
     public let metadata: KomgaBookMetadata
     /// Nil when the book has never been opened — the same "never opened" that
-    /// the progression endpoint expresses as 204 (KOMGA-API §4).
+    /// the progression endpoint expresses as 204.
     public let readProgress: KomgaReadProgress?
     public let oneshot: Bool
     public let deleted: Bool
@@ -291,9 +304,9 @@ public struct KomgaBook: Decodable, Sendable, Hashable, Identifiable {
         )
     }
 
-    /// Only DIVINA books are readable by this app (PLAN §1 rules out EPUB/PDF),
+    /// Only DIVINA books are readable by this app — EPUB and PDF are non-goals —
     /// and Komga reports `pagesCount == 0` until analysis finishes — so an
-    /// unanalysed book must not be offered as readable (KOMGA-API §6).
+    /// unanalysed book must not be offered as readable.
     public var isReadable: Bool {
         media.status == "READY" && media.mediaProfile == "DIVINA" && media.pagesCount > 0
     }
@@ -356,7 +369,7 @@ public struct KomgaBookMetadata: Decodable, Sendable, Hashable {
 }
 
 /// `GET /api/v1/…/books` inlines this, which is the whole reason browse goes
-/// through `/api/v1` instead of OPDS v2 (PLAN §2 / KOMGA-API §3).
+/// through `/api/v1` instead of OPDS v2.
 public struct KomgaReadProgress: Decodable, Sendable, Hashable {
     /// 1-based, matching the progression API's `locations.position`.
     public let page: Int

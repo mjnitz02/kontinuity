@@ -3,7 +3,7 @@
 //  Kontinuity
 //
 //  The connected-vs-not split, and the sidebar the rest of the app hangs off.
-//  PLAN §7: sidebar → content grid → detail, Komga-ish and iPad-native.
+//  Sidebar → content grid → detail, Komga-ish and iPad-native.
 //
 
 import KontinuityCore
@@ -11,7 +11,7 @@ import SwiftData
 import SwiftUI
 
 struct RootView: View {
-    /// Multi-server is an explicit non-goal (PLAN §1), so "the server" is the
+    /// Multi-server is an explicit non-goal, so "the server" is the
     /// first (and only) row.
     @Query(sort: \Server.addedDate) private var servers: [Server]
 
@@ -68,10 +68,10 @@ private struct ConnectedView: View {
                     downloadSessionConfiguration: downloadSessionProvider.makeConfiguration()
                 )
             } catch {
-                failure = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
+                failure = error.userMessage
             }
         }
-        // One of PLAN §5's five flush triggers: a backgrounded app can be
+        // One of the five sync flush triggers: a backgrounded app can be
         // killed by the system at any moment, so any pending progress needs
         // to be on its way to Komga before that happens, not after.
         .onChange(of: scenePhase) { _, phase in

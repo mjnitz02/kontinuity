@@ -3,7 +3,7 @@
 //  Kontinuity
 //
 //  Mode B's keyboard, as `UIKeyCommand`s rather than SwiftUI's `onKeyPress`
-//  (READER-DESIGN §3's binding table). The swap isn't stylistic — measured on
+//  The swap isn't stylistic — measured on
 //  an iPad with a Magic Keyboard and reproduced by
 //  `GlassesModeUITests.testArrowKeysAdvanceAndRetreatTheBandIndex`, the arrow
 //  keys never arrive at `onKeyPress` at all, in either the catch-all or the
@@ -120,7 +120,7 @@ struct GlassesKeyCommandCatcher: UIViewRepresentable {
             onKey?(Self.bindings[index].key)
         }
 
-        /// READER-DESIGN §3's table, plus `,`/`.` for the width fit, which
+        /// The binding table, plus `,`/`.` for the width fit, which
         /// postdates that table. `P` (previous volume) is the one
         /// binding still missing: nothing in the app fetches a *previous* book
         /// yet, so it's left unbound rather than bound to a no-op.

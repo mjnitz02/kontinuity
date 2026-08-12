@@ -2,10 +2,10 @@
 //  DownloadsView.swift
 //  Kontinuity
 //
-//  PLAN §7: "Downloaded" is a first-class sidebar root that works with no
-//  server at all — every row here is built from the SwiftData `Book` cache,
-//  never from a live fetch. Also where PLAN §6's two retention knobs (storage
-//  cap, auto-remove-on-finish) live, colocated with what they act on.
+//  "Downloaded" is a first-class sidebar root that works with no server at all
+//  — every row here is built from the SwiftData `Book` cache, never from a live
+//  fetch. Also where the two retention knobs (storage cap,
+//  auto-remove-on-finish) live, colocated with what they act on.
 //
 
 import KontinuityCore
@@ -133,13 +133,15 @@ struct DownloadsView: View {
     }
 
     private var active: [Book] {
-        books
-            .filter { [.queued, .downloading, .decompressing].contains($0.downloadState) }
-            .sorted { ($0.title ?? $0.id) < ($1.title ?? $1.id) }
+        byTitle(books.filter(\.downloadState.isActive))
     }
 
     private var failed: [Book] {
-        books.filter { $0.downloadState == .failed }.sorted { ($0.title ?? $0.id) < ($1.title ?? $1.id) }
+        byTitle(books.filter { $0.downloadState == .failed })
+    }
+
+    private func byTitle(_ rows: [Book]) -> [Book] {
+        rows.sorted { ($0.title ?? $0.id) < ($1.title ?? $1.id) }
     }
 
     private var downloaded: [Book] {
@@ -190,7 +192,7 @@ struct DownloadsView: View {
             cancelButton(for: book, label: "Queued")
         case .downloading, .decompressing:
             HStack(spacing: 8) {
-                ProgressView(value: progressFraction(for: book)).frame(width: 60)
+                ProgressView(value: book.downloadProgressFraction).frame(width: 60)
                 cancelButton(for: book, label: nil)
             }
         case .failed:
@@ -212,11 +214,6 @@ struct DownloadsView: View {
             }
             Button("Cancel") { session.downloads.cancel(bookID: book.id) }.font(.caption)
         }
-    }
-
-    private func progressFraction(for book: Book) -> Double {
-        guard book.expectedBytes > 0 else { return 0 }
-        return min(1, max(0, Double(book.downloadedBytes) / Double(book.expectedBytes)))
     }
 
     private func byteCount(_ bytes: Int64) -> String {

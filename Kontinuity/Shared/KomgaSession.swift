@@ -62,7 +62,7 @@ final class KomgaSession {
     /// The choke point every "push then refresh" trigger should call instead
     /// of `sync.flush()` directly — a book whose completion is confirmed
     /// synced by the flush is exactly what auto-remove-on-finish is watching
-    /// for (PLAN §6), and this is the one place that's checked regardless of
+    /// for, and this is the one place that's checked regardless of
     /// which of the five triggers fired.
     func flushAndReconcileDownloads() async {
         await sync.flush()
@@ -76,7 +76,7 @@ final class KomgaSession {
         } catch {
             // Non-fatal: the sidebar's fixed roots still work, and "All Series"
             // covers everything the user can see anyway.
-            librariesError = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
+            librariesError = error.userMessage
         }
     }
 
@@ -103,7 +103,7 @@ extension EnvironmentValues {
 }
 
 /// How `DownloadCoordinator` gets its transport. Live is a background
-/// `URLSession` configuration so transfers survive app suspension (PLAN §6);
+/// `URLSession` configuration so transfers survive app suspension;
 /// `UITestSupport` substitutes a plain ephemeral one, since a UI test's stub
 /// server has no real background transfer to survive.
 struct DownloadSessionProvider {

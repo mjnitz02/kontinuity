@@ -2,8 +2,8 @@
 //  OfflineBanner.swift
 //  Kontinuity
 //
-//  PLAN §11: when a browse screen has fallen back to a locally-derived view
-//  because the server can't be reached, this is what makes sure it's never
+//  When a browse screen has fallen back to a locally-derived view because the
+//  server can't be reached, this is what makes sure it's never
 //  mistaken for the whole library — mounted persistently (not a toast like
 //  `ConflictNoticeBanner`) on every screen that can show one.
 //
@@ -42,8 +42,9 @@ extension Book {
     /// The read state this row's own local progress represents.
     ///
     /// `asKomgaBook`'s reconstructed `readProgress` is deliberately nil — that
-    /// field means "what the server last said" to `ProgressionSyncEngine
-    /// .reconcile(with:)`, and stuffing local progress into it would read as
+    /// field means "what the server last said" to
+    /// `ProgressionSyncEngine.reconcile(with:)`, and stuffing local progress
+    /// into it would read as
     /// a fabricated server answer the next time that book round-trips
     /// through sync. So it can't carry the local state, but an offline view
     /// still needs to show it — this is what those call sites use instead of

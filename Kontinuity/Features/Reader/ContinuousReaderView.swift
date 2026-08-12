@@ -2,18 +2,18 @@
 //  ContinuousReaderView.swift
 //  Kontinuity
 //
-//  Mode A's continuous/web-comic surface (PLAN §12, phase 9B): a vertical
+//  Mode A's continuous/web-comic surface: a vertical
 //  `ScrollView` of width-fit pages, replacing the paging `TabView` when
 //  `ReaderModel.flow == .continuous`. Width-fit only, no zoom — confirmed
-//  with Matt rather than assumed from §12's recommendation alone, since
-//  pinch-zoom over a continuous strip is a different problem from
-//  `ZoomableImageView`'s per-page scroll view, and phase 3's "zoomable child
-//  eats the parent's gesture" bug is waiting to be re-made there.
+//  with Matt rather than assumed, since pinch-zoom over a continuous strip is
+//  a different problem from `ZoomableImageView`'s per-page scroll view, and
+//  the "zoomable child eats the parent's gesture" bug is waiting to be re-made
+//  there.
 //
 //  Page heights are reserved from the manifest (`ContinuousScrollLayout`,
 //  `KontinuityCore`) before any image loads, so the scroll position never
 //  jumps under the reader as images land in — the single most likely way to
-//  get this wrong (§12).
+//  get this wrong.
 //
 //  Progress has no page turn to hook, unlike the `TabView`'s
 //  `currentSpreadIndex.didSet`: a single `GeometryReader`-backed preference
@@ -154,10 +154,7 @@ struct ContinuousReaderView: View {
             try? await Task.sleep(for: .seconds(0.3))
             guard !Task.isCancelled else { return }
             onPageRead(index)
-            loader.prune(around: index)
-            for neighbour in [index - 1, index + 1] where pageSources.indices.contains(neighbour) {
-                loader.prefetch(page: neighbour, source: pageSources[neighbour])
-            }
+            loader.focus(on: index, in: pageSources)
             if index == pageCount - 1 {
                 onReachEnd()
             }
@@ -166,26 +163,13 @@ struct ContinuousReaderView: View {
 
     private func chrome(scrollProxy: ScrollViewProxy) -> some View {
         VStack {
-            HStack {
-                Button("Done", action: onDone)
-                    .accessibilityIdentifier(AID.readerDone)
-                Spacer()
-                if pageCount > 0 {
-                    Text("\(min(currentPageIndex + 1, pageCount)) / \(pageCount)")
-                        .accessibilityIdentifier(AID.readerPageLabel)
-                }
-                Spacer()
-                Button(action: onToggleFlow) {
-                    Image(systemName: "arrow.up.and.down")
-                }
-                .accessibilityIdentifier(AID.readerFlowToggle)
-                Button(action: onEnterGlasses) {
-                    Image(systemName: "eyeglasses")
-                }
-                .accessibilityIdentifier(AID.readerGlassesModeButton)
-            }
-            .padding()
-            .background(.ultraThinMaterial)
+            ReaderChromeBar(
+                position: pageCount > 0 ? "\(min(currentPageIndex + 1, pageCount)) / \(pageCount)" : nil,
+                flow: .continuous,
+                onDone: onDone,
+                onToggleFlow: onToggleFlow,
+                onEnterGlasses: onEnterGlasses
+            )
 
             Spacer()
 

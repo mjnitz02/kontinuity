@@ -5,7 +5,7 @@
 //  The canned library `StubKomgaService` serves, plus the tiny CBZ writer that
 //  turns its page images into something `CBZArchive` can actually decompress.
 //  Split out of StubKomgaService.swift once the offline-simulation guard
-//  rails (PLAN §11) pushed that file over the line-count limit — this half is
+//  rails pushed that file over the line-count limit — this half is
 //  pure data and has no `KomgaServing` conformance of its own to justify
 //  staying there.
 //
@@ -215,7 +215,7 @@
         /// A flat-colour JPEG for a reader page, keyed by its href so the same
         /// page looks the same across a run without any binary fixtures in the
         /// repo — same technique as ``poster(for:)``, sized to what the stub's
-        /// manifest declares (800×1200, matching KOMGA-API §2's measured aspect).
+        /// manifest declares (800×1200, matching a real page's aspect).
         static func pageImage(at href: String) -> Data {
             let digest = href.unicodeScalars.reduce(UInt32(2_166_136_261)) { hash, scalar in
                 (hash ^ (scalar.value & 0xFF)) &* 16_777_619

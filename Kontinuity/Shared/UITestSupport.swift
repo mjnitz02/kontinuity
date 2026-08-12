@@ -48,7 +48,7 @@
         }
 
         /// Windrunner Vol. 1 (finished) and Vol. 2 (partway through), both
-        /// downloaded — enough for a UI test to assert PLAN §11's fallback
+        /// downloaded — enough for a UI test to assert the offline fallback
         /// views: Windrunner shows up offline and Neon Requiem/Halcyon Drift
         /// (nothing downloaded there) don't; and the series' own book list
         /// shows only these two, not Vol. 3, with Vol. 2's in-progress state
@@ -90,7 +90,6 @@
 
         /// Serves the canned library instead of building a client from the
         /// Keychain — offline-shaped for `.offline`/`.offlineWithDownloads`
-        /// (PLAN §11).
         static let provider = KomgaProvider { _, _ in
             let mode = UITestMode.current
             return StubKomgaService(offline: mode == .offline || mode == .offlineWithDownloads)

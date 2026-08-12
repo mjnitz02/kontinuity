@@ -2,7 +2,7 @@
 //  DownloadCoordinator.swift
 //  Kontinuity
 //
-//  The impure half of PLAN §6's download design — mirrors the
+//  The impure half of the download design — mirrors the
 //  ProgressionSync/ProgressionSyncEngine split: `CBZArchive`, `LocalBookStore`
 //  and `DownloadRetention` in KontinuityCore hold every decision that's
 //  provable without a simulator; this owns the queue, the SwiftData
@@ -11,8 +11,8 @@
 //  Whole-file transfers ride a dedicated `URLSession` (background in
 //  production, ephemeral under `-UITestMode`) rather than the service's own
 //  session, because a background transfer needs its own delegate lifecycle
-//  that survives app suspension — the whole point of PLAN §6's "URLSession
-//  background configuration" decision. `KomgaServing.fileDownloadRequest`
+//  that survives app suspension, which is the whole point of running downloads
+//  on a background configuration. `KomgaServing.fileDownloadRequest`
 //  keeps the auth header logic in one place regardless of which session ends
 //  up sending it.
 //
@@ -26,7 +26,7 @@ import SwiftData
 @Observable
 final class DownloadCoordinator: NSObject {
     private let service: any KomgaServing
-    private let modelContext: ModelContext
+    private let books: BookStore
     private let store: LocalBookStore
     private let settings: DownloadSettings
     private let maxConcurrent = 3
@@ -46,7 +46,7 @@ final class DownloadCoordinator: NSObject {
 
     /// A "couldn't free enough space" note for the Downloads screen — set
     /// when retention's pending/open exclusions leave the library still over
-    /// the cap (PLAN §6: pause and say so, don't thrash).
+    /// the cap. Pause and say so rather than thrash.
     private(set) var retentionWarning: String?
 
     /// `settings` has no default here: a default argument expression runs in
@@ -62,7 +62,7 @@ final class DownloadCoordinator: NSObject {
         sessionConfiguration: URLSessionConfiguration
     ) {
         self.service = service
-        self.modelContext = modelContext
+        books = BookStore(modelContext: modelContext)
         self.store = store
         self.settings = settings
         (eventStream, eventContinuation) = AsyncStream<DownloadEvent>.makeStream()
@@ -76,7 +76,7 @@ final class DownloadCoordinator: NSObject {
         // `reconcileAfterLaunch`'s first `await` finally yields back, and get
         // mistaken for a stale row left behind by a killed process, starting
         // a second concurrent download of the same book.
-        let staleBookIDs = allBooks()
+        let staleBookIDs = books.all()
             .filter { $0.downloadState == .downloading || $0.downloadState == .queued }
             .map(\.id)
         Task { await reconcileAfterLaunch(candidateBookIDs: staleBookIDs) }
@@ -84,7 +84,7 @@ final class DownloadCoordinator: NSObject {
 
     // MARK: - Enqueueing
 
-    /// The headline gesture (PLAN §6): every unread, readable book in the
+    /// The headline gesture: every unread, readable book in the
     /// series, in reading order — `books(inSeries:)` already sorts by
     /// `metadata.numberSort`.
     func enqueueUnread(seriesID: String) async {
@@ -98,7 +98,7 @@ final class DownloadCoordinator: NSObject {
     }
 
     func enqueue(book: KomgaBook) {
-        let row = fetchOrCreate(bookID: book.id)
+        let row = books.findOrCreate(book.id)
         guard row.downloadState == .notDownloaded || row.downloadState == .failed else { return }
         row.seriesID = book.seriesId
         row.seriesTitle = book.seriesTitle
@@ -109,35 +109,53 @@ final class DownloadCoordinator: NSObject {
         row.sizeBytes = book.sizeBytes
         row.downloadState = .queued
         row.downloadError = nil
-        try? modelContext.save()
+        books.save()
         pendingQueue.append(book.id)
         pumpQueue()
     }
 
     func cancel(bookID: String) {
-        tasksByBookID.removeValue(forKey: bookID)?.cancel()
-        waiters.removeValue(forKey: bookID)?.resume(throwing: CancellationError())
-        pendingQueue.removeAll { $0 == bookID }
-        guard let book = fetchExisting(bookID: bookID) else { return }
-        book.downloadState = .notDownloaded
-        book.downloadedBytes = 0
-        book.expectedBytes = 0
-        try? modelContext.save()
+        stopTransfer(bookID: bookID)
+        guard let book = books.find(bookID) else { return }
+        resetTransferState(book)
+        books.save()
     }
 
     /// Deletes a downloaded book's files — a user-initiated remove, an
-    /// eviction, or auto-remove-on-finish all funnel through this. The
-    /// metadata cache is left alone: "the UI shows downloaded-vs-cloud state
-    /// per book" (PLAN §6) needs a title to show even after the files are gone.
+    /// eviction, or auto-remove-on-finish all funnel through this. The metadata
+    /// cache is left alone: the UI shows downloaded-vs-cloud state per book, so
+    /// it needs a title even after the files are gone.
     func remove(bookID: String) {
-        cancel(bookID: bookID)
-        try? store.deleteBook(bookID)
-        guard let book = fetchExisting(bookID: bookID) else { return }
-        book.downloadState = .notDownloaded
+        guard let book = books.find(bookID) else {
+            stopTransfer(bookID: bookID)
+            return
+        }
+        delete(book)
+        books.save()
+    }
+
+    /// The row-in-hand form, for the retention passes that already hold every
+    /// row they're about to act on — going back through `remove(bookID:)` would
+    /// re-read the whole table once per book evicted.
+    private func delete(_ book: Book) {
+        stopTransfer(bookID: book.id)
+        try? store.deleteBook(book.id)
+        resetTransferState(book)
         book.downloadedDate = nil
+    }
+
+    /// Drops the in-flight task, the waiter it would have resumed, and the
+    /// queue entry — everything outside the SwiftData row.
+    private func stopTransfer(bookID: String) {
+        tasksByBookID.removeValue(forKey: bookID)?.cancel()
+        waiters.removeValue(forKey: bookID)?.resume(throwing: CancellationError())
+        pendingQueue.removeAll { $0 == bookID }
+    }
+
+    private func resetTransferState(_ book: Book) {
+        book.downloadState = .notDownloaded
         book.downloadedBytes = 0
         book.expectedBytes = 0
-        try? modelContext.save()
     }
 
     // MARK: - Queue
@@ -145,16 +163,16 @@ final class DownloadCoordinator: NSObject {
     private func pumpQueue() {
         while activeCount < maxConcurrent, !pendingQueue.isEmpty {
             let bookID = pendingQueue.removeFirst()
-            guard let book = fetchExisting(bookID: bookID), book.downloadState == .queued else { continue }
+            guard let book = books.find(bookID), book.downloadState == .queued else { continue }
             start(bookID: book.id)
         }
     }
 
     private func start(bookID: String) {
-        guard let book = fetchExisting(bookID: bookID) else { return }
+        guard let book = books.find(bookID) else { return }
         book.downloadState = .downloading
         book.downloadError = nil
-        try? modelContext.save()
+        books.save()
         activeCount += 1
 
         Task {
@@ -181,20 +199,20 @@ final class DownloadCoordinator: NSObject {
     }
 
     private func finishSuccess(bookID: String) {
-        guard let book = fetchExisting(bookID: bookID) else { return }
+        guard let book = books.find(bookID) else { return }
         book.downloadState = .downloaded
         book.downloadedDate = .now
         book.downloadedBytes = store.diskUsage(forBook: bookID)
         book.downloadError = nil
-        try? modelContext.save()
+        books.save()
         Task { await applyRetention() }
     }
 
     private func finishFailure(bookID: String, error: Error) {
-        guard let book = fetchExisting(bookID: bookID) else { return }
+        guard let book = books.find(bookID) else { return }
         book.downloadState = .failed
-        book.downloadError = (error as? KomgaError)?.errorDescription ?? error.localizedDescription
-        try? modelContext.save()
+        book.downloadError = error.userMessage
+        books.save()
     }
 
     // MARK: - Whole-file path
@@ -213,7 +231,7 @@ final class DownloadCoordinator: NSObject {
     /// Positional zip against the manifest's `readingOrder`, not the archive's
     /// own filenames — `CBZArchive` already put pages in natural order, and
     /// the manifest is the authoritative source for each page's width/height/
-    /// type (KOMGA-API §2), fetched moments earlier rather than re-derived.
+    /// type, fetched moments earlier rather than re-derived.
     private func extractAndStore(fileURL: URL, manifest: KomgaDivinaManifest, bookID: String) throws {
         defer { try? FileManager.default.removeItem(at: fileURL) }
         let data = try Data(contentsOf: fileURL)
@@ -227,30 +245,33 @@ final class DownloadCoordinator: NSObject {
         try store.write(pages: writes, bookID: bookID)
     }
 
-    // MARK: - Per-page fallback (403, PLAN §6)
+    // MARK: - Per-page fallback (403)
 
     /// Slower but always works on a restricted account. Prefers the
     /// manifest's `alternate` link outright — unlike the reader's
     /// decode-and-fall-back approach, the download already knows up front
-    /// which pages Komga flagged as non-recommended (KOMGA-API §5).
+    /// which pages Komga flagged as non-recommended.
     private func downloadPerPage(bookID: String, manifest: KomgaDivinaManifest) async throws {
+        // Resolved once, not per page: this loop runs a few hundred times on a
+        // long volume and each lookup reads every row.
+        let row = books.find(bookID)
         var writes: [LocalPageWrite] = []
+        var receivedBytes: Int64 = 0
         writes.reserveCapacity(manifest.readingOrder.count)
         for link in manifest.readingOrder {
             let href = link.alternate.first?.href ?? link.href
             let data = try await service.pageImageData(at: href)
             writes.append(LocalPageWrite(data: data, width: link.width, height: link.height, mediaType: link.type))
-            if let book = fetchExisting(bookID: bookID) {
-                book.downloadedBytes = Int64(writes.reduce(0) { $0 + $1.data.count })
-            }
+            receivedBytes += Int64(data.count)
+            row?.downloadedBytes = receivedBytes
         }
         try store.write(pages: writes, bookID: bookID)
     }
 
-    // MARK: - Retention (PLAN §6)
+    // MARK: - Retention
 
     func applyRetention() async {
-        let downloaded = allBooks().filter { $0.downloadState == .downloaded }
+        let downloaded = books.all().filter { $0.downloadState == .downloaded }
         let usedBytes = downloaded.reduce(Int64(0)) { $0 + $1.downloadedBytes }
         let candidates = downloaded.map {
             RetentionCandidate(
@@ -266,9 +287,12 @@ final class DownloadCoordinator: NSObject {
             usedBytes: usedBytes,
             capBytes: settings.storageCapBytes
         )
+        let byID = Dictionary(downloaded.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for bookID in result.toEvict {
-            remove(bookID: bookID)
+            guard let book = byID[bookID] else { continue }
+            delete(book)
         }
+        books.save()
         retentionWarning = result.insufficientSpace
             ? "The storage limit is reached and everything downloaded is either open or has unsynced "
             + "progress. Raise the limit in Downloads or free it up by hand."
@@ -277,18 +301,19 @@ final class DownloadCoordinator: NSObject {
 
     /// A book counts as finished once its last-known local page reaches the
     /// page count *and* nothing is still queued to sync — "confirmed synced",
-    /// not just "read", is what makes deleting the files safe (PLAN §6).
+    /// not just "read", is what makes deleting the files safe.
     func reapAutoRemovable() {
         guard settings.autoRemoveOnFinish else { return }
-        for book in allBooks() {
+        for book in books.all() {
             guard book.downloadState == .downloaded,
                   !book.isPending,
                   book.id != openBookID,
                   let pages = book.pagesCount, pages > 0,
                   book.localPage >= pages
             else { continue }
-            remove(bookID: book.id)
+            delete(book)
         }
+        books.save()
     }
 
     // MARK: - Launch reconciliation
@@ -296,7 +321,7 @@ final class DownloadCoordinator: NSObject {
     /// Re-attaches to any background tasks the OS kept alive across a
     /// relaunch; anything among `candidateBookIDs` with no live task just
     /// restarts, which is the honest thing to do rather than guessing at
-    /// partial progress from a killed process (PLAN §6). `candidateBookIDs`
+    /// partial progress from a killed process. `candidateBookIDs`
     /// is a snapshot taken before this method's first `await`, so a book
     /// `enqueue`d in the meantime is never mistaken for one of these.
     private func reconcileAfterLaunch(candidateBookIDs: [String]) async {
@@ -315,13 +340,13 @@ final class DownloadCoordinator: NSObject {
             guard !liveBookIDs.contains(bookID),
                   !pendingQueue.contains(bookID),
                   tasksByBookID[bookID] == nil,
-                  let book = fetchExisting(bookID: bookID),
+                  let book = books.find(bookID),
                   book.downloadState == .downloading || book.downloadState == .queued
             else { continue }
             book.downloadState = .queued
             pendingQueue.append(bookID)
         }
-        try? modelContext.save()
+        books.save()
         pumpQueue()
     }
 
@@ -343,7 +368,7 @@ final class DownloadCoordinator: NSObject {
     private func handle(_ event: DownloadEvent) {
         switch event {
         case let .progress(bookID, received, expected):
-            guard let book = fetchExisting(bookID: bookID) else { return }
+            guard let book = books.find(bookID) else { return }
             book.downloadedBytes = received
             if expected > 0 {
                 book.expectedBytes = expected
@@ -362,27 +387,6 @@ final class DownloadCoordinator: NSObject {
                 continuation.resume(throwing: error ?? URLError(.unknown))
             }
         }
-    }
-
-    // MARK: - Fetch helpers (mirrors ProgressionSyncEngine's — Book is shared,
-
-    // but the two engines are deliberately not coupled to each other)
-
-    private func allBooks() -> [Book] {
-        (try? modelContext.fetch(FetchDescriptor<Book>())) ?? []
-    }
-
-    private func fetchExisting(bookID: String) -> Book? {
-        allBooks().first { $0.id == bookID }
-    }
-
-    private func fetchOrCreate(bookID: String) -> Book {
-        if let existing = fetchExisting(bookID: bookID) {
-            return existing
-        }
-        let book = Book(id: bookID, localPage: 0, localReadDate: .now, pageHref: "", mediaType: "")
-        modelContext.insert(book)
-        return book
     }
 }
 

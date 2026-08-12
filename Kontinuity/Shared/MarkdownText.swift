@@ -4,7 +4,7 @@
 //
 //  Komga stores summaries as Markdown — its own web UI renders them — and real
 //  library metadata is full of `[AnimeNewsNetwork](https://…)` links. Rendered
-//  as a plain string those show up as raw source, which is how the Air Gear
+//  as a plain string those show up as raw source, which is how the Skyward Bound
 //  summary looked before this existed.
 //
 

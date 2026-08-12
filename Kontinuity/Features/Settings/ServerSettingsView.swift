@@ -96,8 +96,7 @@ struct ServerSettingsView: View {
             try? context.save()
             status = .ok(email: user.email, roles: user.roles.sorted())
         } catch {
-            let komga = error as? KomgaError
-            status = .failed(komga?.errorDescription ?? error.localizedDescription)
+            status = .failed(error.userMessage)
         }
     }
 

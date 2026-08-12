@@ -7,9 +7,8 @@
 //  - A background `URLSession` transfer that finishes while the app is
 //    suspended: the system relaunches the app and calls this to hand over a
 //    completion handler, which `DownloadCoordinator`'s session delegate must
-//    call once its background session has delivered every pending event
-//    (PLAN §6).
-//  - Mode B's external display scene (PLAN phase 6, READER-DESIGN §3):
+//    call once its background session has delivered every pending event.
+//  - Mode B's external display scene:
 //    `application(_:configurationForConnecting:options:)` is how UIKit asks
 //    which `UISceneConfiguration`/delegate class to use for a connecting
 //    scene, and a manually-built `GlassesSceneDelegate` has no path into

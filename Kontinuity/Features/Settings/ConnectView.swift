@@ -2,7 +2,7 @@
 //  ConnectView.swift
 //  Kontinuity
 //
-//  Phase 1's whole UI: point at a Komga server and prove auth works.
+//  Point at a Komga server and prove auth works.
 //
 
 import KontinuityCore

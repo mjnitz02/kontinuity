@@ -2,7 +2,7 @@
 //  ProgressionSync.swift
 //  KontinuityCore
 //
-//  The reconciliation policy from PLAN §5, pure and UIKit/network-free — same
+//  The reconciliation policy, pure and UIKit/network-free — same
 //  precedent as Layout/PageLayout.swift: the logic that's actually worth
 //  getting right lives somewhere it can be unit-tested without a simulator or
 //  a SwiftData container. `ProgressionSyncEngine` (app target) is the impure
@@ -46,7 +46,7 @@ public enum SyncOutcome: Equatable, Sendable {
     case pushLocal
     /// The server moved and local didn't — overwrite the local row with it.
     case adoptServer(page: Int, readDate: Date)
-    /// Both sides moved since the last sync. PLAN §5: take the further page
+    /// Both sides moved since the last sync: take the further page
     /// rather than silently discarding either one, and tell the user.
     case bothMoved(winner: Side, page: Int, readDate: Date)
 }
@@ -58,7 +58,7 @@ public enum ProgressionSync {
         guard let local else { return .noChange }
 
         guard let server else {
-            // Never opened server-side (204/nil, KOMGA-API §4). The only
+            // Never opened server-side (204 decoded to nil). The only
             // meaningful case is an unpushed local write waiting to create it.
             return local.isPending ? .pushLocal : .noChange
         }

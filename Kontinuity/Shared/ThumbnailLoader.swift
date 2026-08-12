@@ -68,7 +68,7 @@ final class ThumbnailLoader {
     }
 
     /// A cover you've genuinely seen before shouldn't fail to load just
-    /// because the server is unreachable right now (PLAN §11) — an
+    /// because the server is unreachable right now — an
     /// offline-classified failure retries once against whatever's already in
     /// `URLSession.komga`'s `URLCache`, rather than going straight to the
     /// placeholder.
