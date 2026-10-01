@@ -6,8 +6,7 @@
 //  ProgressionSync/ProgressionSyncEngine and DownloadRetention/
 //  DownloadCoordinator split: `BandLayout` in KontinuityCore holds the pure
 //  math, this owns the session-scoped state (which band is showing, whether
-//  an external display is connected, the keyboard-driven knobs) plus the
-//  `UIScreen` connect/disconnect bridge.
+//  an external display is connected, the keyboard-driven knobs).
 //
 //  Owned by `KomgaSession` alongside `sync`/`downloads` rather than by
 //  `ReaderView`, because the external-display connection can outlive any one
@@ -85,15 +84,6 @@ final class GlassesCoordinator {
     /// verdict.
     private(set) var flow: BandFlow = .perPage
 
-    /// "Are glasses attached?" — the coarser of the two signals, bridged from
-    /// `UIScreen.didConnectNotification`/
-    /// `didDisconnectNotification` below. A fine trigger for offering or
-    /// auto-entering the mode; **not** what gates the panel blackout —
-    /// mirroring makes this true while `isExternalSceneConnected` stays
-    /// false, which is exactly the case a screen count alone can't
-    /// distinguish.
-    private(set) var isGlassesAttached: Bool
-
     /// "Do I have a second surface to draw on?" — set by
     /// `GlassesSceneDelegate.scene(_:willConnectTo:)` and cleared in
     /// `sceneDidDisconnect`, via `AppDelegate`'s static handoff. This is the
@@ -149,16 +139,6 @@ final class GlassesCoordinator {
     /// unrelated keypress.
     private(set) var statusIndicatorText: String?
 
-    private let eventStream: AsyncStream<Bool>
-    private let eventContinuation: AsyncStream<Bool>.Continuation
-    /// Read only in `startScreenObserving()` and `deinit` — `deinit` can't be
-    /// actor-isolated, so this can't be `@MainActor`-isolated storage either,
-    /// same reasoning as `DownloadSettings.defaults`. `@ObservationIgnored`
-    /// because plain `nonisolated` isn't allowed on a mutable property the
-    /// `@Observable` macro instruments, and nothing renders off this anyway.
-    @ObservationIgnored
-    private nonisolated(unsafe) var screenObservers: [NSObjectProtocol] = []
-
     /// No default: a default argument expression runs in a nonisolated
     /// context regardless of this initializer's own isolation, so
     /// `GlassesSettings()` — main-actor-isolated under this project's default
@@ -168,16 +148,6 @@ final class GlassesCoordinator {
         self.settings = settings
         dimLevel = settings.dimLevel
         autoScrollStep = min(Self.autoScrollIntervals.count - 1, max(0, settings.autoScrollStep))
-        isGlassesAttached = Self.hasExternalScreen()
-        (eventStream, eventContinuation) = AsyncStream<Bool>.makeStream()
-        startScreenObserving()
-    }
-
-    deinit {
-        let center = NotificationCenter.default
-        for observer in screenObservers {
-            center.removeObserver(observer)
-        }
     }
 
     // MARK: - Lifecycle
@@ -531,53 +501,6 @@ final class GlassesCoordinator {
     }
 
     // MARK: - External display bridge
-
-    /// Delegate methods on `UIScreen`'s notifications run on whatever thread
-    /// posts them — only a `Bool` crosses into this stream; reacting to it
-    /// happens back on `MainActor`. Same shape as `ProgressionSyncEngine`'s
-    /// `NWPathMonitor` bridge and `DownloadCoordinator`'s
-    /// `URLSessionDownloadDelegate` bridge.
-    ///
-    /// Posted by name rather than through `UIScreen.didConnectNotification`/
-    /// `didDisconnectNotification` (deprecated iOS 16, no scene-based
-    /// equivalent that preserves this signal — see `hasExternalScreen()`):
-    /// those are the same runtime notifications, just referenced without
-    /// tripping the deprecated Swift symbol.
-    private func startScreenObserving() {
-        let center = NotificationCenter.default
-        let connect = center.addObserver(
-            forName: Notification.Name("UIScreenDidConnectNotification"), object: nil, queue: nil
-        ) { [eventContinuation] _ in
-            eventContinuation.yield(true)
-        }
-        let disconnect = center.addObserver(
-            forName: Notification.Name("UIScreenDidDisconnectNotification"), object: nil, queue: nil
-        ) { [eventContinuation] _ in
-            eventContinuation.yield(Self.hasExternalScreen())
-        }
-        screenObservers = [connect, disconnect]
-
-        Task { @MainActor [eventStream] in
-            for await connected in eventStream {
-                isGlassesAttached = connected
-            }
-        }
-    }
-
-    /// `nonisolated` (overriding the class's default `MainActor` isolation)
-    /// so `startScreenObserving()`'s disconnect handler — which runs on
-    /// whatever thread posted the notification — can call it synchronously.
-    /// UIKit posts `UIScreenDidConnect`/`DidDisconnect` on the main thread,
-    /// so `assumeIsolated` just tells the compiler what's already true
-    /// rather than changing any timing.
-    /// Still reads the deprecated `UIScreen.screens`: it's the only API that
-    /// reports every physically attached screen, including one mirrored
-    /// without a matching `UIWindowScene`, which `isExternalSceneConnected`
-    /// can't see. No replacement preserves that without collapsing the two
-    /// signals — see the project memory on migrating this bridge.
-    private nonisolated static func hasExternalScreen() -> Bool {
-        MainActor.assumeIsolated { UIScreen.screens.count > 1 }
-    }
 
     /// Called by `GlassesSceneDelegate.scene(_:willConnectTo:)` via
     /// `AppDelegate`'s static handoff — the only signal that a real,
