@@ -42,6 +42,15 @@ DESTINATION    ?= platform=iOS Simulator,name=$(SIMULATOR_NAME),arch=arm64
 IPHONE_SIMULATOR_NAME ?= iPhone 17 Pro
 IPHONE_DESTINATION    ?= platform=iOS Simulator,name=$(IPHONE_SIMULATOR_NAME),arch=arm64
 
+# XCUITests drive a booted simulator, so a single failure is as often the runner
+# having a bad minute as it is a real regression — the same suite has taken 320s
+# and 559s on CI. `-retry-tests-on-failure` re-runs only the tests that failed
+# and lets the run pass if the retry passes; a genuinely broken test still fails
+# every attempt, so this hides flake without hiding regressions. Empty by
+# default so a local run reports the first failure straight away — CI opts in.
+UI_TEST_ITERATIONS ?=
+UI_RETRY_FLAGS     := $(if $(UI_TEST_ITERATIONS),-retry-tests-on-failure -test-iterations $(UI_TEST_ITERATIONS),)
+
 # On-device deploy (paid Apple Developer Program membership). Profiles are good
 # for a year, so `make deploy` is only needed when you want new code on the
 # iPad — plugged in, or paired over Wi-Fi. DEVICE_ID comes from
@@ -253,7 +262,8 @@ test-ui:
 		-project $(PROJECT) -scheme $(SCHEME) \
 		-destination '$(DESTINATION)' \
 		-only-testing:$(UI_TARGET) \
-		-skip-testing:$(UI_TARGET)/ReaderIPhoneUITests $(FORMATTER)
+		-skip-testing:$(UI_TARGET)/ReaderIPhoneUITests \
+		$(UI_RETRY_FLAGS) $(FORMATTER)
 
 ## test-all: run the unit and UI suites together
 .PHONY: test-all

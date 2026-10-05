@@ -46,18 +46,10 @@ final class GlassesModeUITests: XCTestCase {
         enterGlassesMode()
 
         app.typeKey(XCUIKeyboardKey.rightArrow.rawValue, modifierFlags: [])
-        let afterAdvance = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
-        XCTAssertTrue(
-            afterAdvance.label.hasPrefix("2 / "),
-            "Right arrow should advance to band 2, got \(afterAdvance.label)"
-        )
+        assertBandStatus(hasPrefix: "2 / ", "Right arrow should advance to band 2")
 
         app.typeKey(XCUIKeyboardKey.leftArrow.rawValue, modifierFlags: [])
-        let afterRetreat = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
-        XCTAssertTrue(
-            afterRetreat.label.hasPrefix("1 / "),
-            "Left arrow should retreat back to band 1, got \(afterRetreat.label)"
-        )
+        assertBandStatus(hasPrefix: "1 / ", "Left arrow should retreat back to band 1")
     }
 
     /// Space is the binding most used in practice (one thumb, eyes closed),
@@ -70,18 +62,10 @@ final class GlassesModeUITests: XCTestCase {
         enterGlassesMode()
 
         app.typeKey(XCUIKeyboardKey.space.rawValue, modifierFlags: [])
-        let afterAdvance = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
-        XCTAssertTrue(
-            afterAdvance.label.hasPrefix("2 / "),
-            "Space should advance to band 2, got \(afterAdvance.label)"
-        )
+        assertBandStatus(hasPrefix: "2 / ", "Space should advance to band 2")
 
         app.typeKey(XCUIKeyboardKey.space.rawValue, modifierFlags: .shift)
-        let afterRetreat = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
-        XCTAssertTrue(
-            afterRetreat.label.hasPrefix("1 / "),
-            "Shift-space should retreat back to band 1, got \(afterRetreat.label)"
-        )
+        assertBandStatus(hasPrefix: "1 / ", "Shift-space should retreat back to band 1")
     }
 
     @MainActor
@@ -100,8 +84,7 @@ final class GlassesModeUITests: XCTestCase {
 
         surface.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
 
-        let label = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
-        XCTAssertTrue(label.label.hasPrefix("2 / "), "Tapping the right quarter should advance, got \(label.label)")
+        assertBandStatus(hasPrefix: "2 / ", "Tapping the right quarter should advance")
     }
 
     /// `dx: 0.3` is inside the old thirds' right-of-centre paging zone but
@@ -128,18 +111,10 @@ final class GlassesModeUITests: XCTestCase {
         app.find(AID.glassesSurface).assertAppears("The band layout surface")
 
         app.swipeLeft()
-        let afterSwipeLeft = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
-        XCTAssertTrue(
-            afterSwipeLeft.label.hasPrefix("2 / "),
-            "Swiping left should advance, got \(afterSwipeLeft.label)"
-        )
+        assertBandStatus(hasPrefix: "2 / ", "Swiping left should advance")
 
         app.swipeRight()
-        let afterSwipeRight = app.find(AID.glassesStatusLabel).assertAppears("The band status line")
-        XCTAssertTrue(
-            afterSwipeRight.label.hasPrefix("1 / "),
-            "Swiping right should retreat, got \(afterSwipeRight.label)"
-        )
+        assertBandStatus(hasPrefix: "1 / ", "Swiping right should retreat")
     }
 
     /// The bug this guards against: `advanceBand()` alone silently no-ops on
@@ -163,7 +138,10 @@ final class GlassesModeUITests: XCTestCase {
 
         var reachedLastBand = false
         for _ in 0 ..< 50 {
-            let label = app.find(AID.glassesStatusLabel).label
+            // `labelIfPresent`, not `.label`: the status line is on a two-second
+            // timer, so a tap that lands slowly can leave this read with nothing
+            // to resolve, which would fail the test rather than loop again.
+            let label = app.find(AID.glassesStatusLabel).labelIfPresent ?? ""
             let parts = label.split(separator: "/").map { $0.trimmingCharacters(in: .whitespaces) }
             if parts.count >= 2, parts[0] == parts[1] {
                 reachedLastBand = true
@@ -220,6 +198,26 @@ final class GlassesModeUITests: XCTestCase {
             app.find(AID.glassesAutoScrollPill).value as? String,
             "1 second per band, playing",
             "Three increases from the default should land on — and stay at — the fastest step"
+        )
+    }
+
+    /// Asserts the band status line reads `prefix`, polling for it instead of
+    /// confirming it exists and then reading its label as a second query —
+    /// the line hides itself two seconds after the input that raised it, and
+    /// spending that budget twice is what made these tests flake on CI.
+    @MainActor
+    private func assertBandStatus(
+        hasPrefix prefix: String,
+        _ message: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let seen = app.waitForLabel(AID.glassesStatusLabel) { $0.hasPrefix(prefix) }
+        XCTAssertTrue(
+            seen?.hasPrefix(prefix) == true,
+            "\(message), got \(seen.map { "\"\($0)\"" } ?? "no status line")",
+            file: file,
+            line: line
         )
     }
 

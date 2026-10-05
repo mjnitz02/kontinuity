@@ -68,7 +68,9 @@ final class DownloadsUITests: XCTestCase {
     private func waitForLabel(_ element: XCUIElement, toContain substring: String, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if element.label.contains(substring) {
+            // `labelIfPresent` so a row that is mid-reload resolves to nothing
+            // and gets polled again, rather than failing the test outright.
+            if element.labelIfPresent?.contains(substring) == true {
                 return true
             }
             Thread.sleep(forTimeInterval: 0.2)

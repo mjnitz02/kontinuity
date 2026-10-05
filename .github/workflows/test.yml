@@ -102,5 +102,8 @@ jobs:
           echo "Using simulator: $name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
+      # UI_TEST_ITERATIONS opts this run into xcodebuild's retry-on-failure (see
+      # the Makefile): a flaky element wait gets a second attempt instead of
+      # failing the merge, while a real regression still fails both.
       - name: Run UI tests
-        run: make test-ui SIMULATOR_NAME="${{ steps.sim.outputs.name }}"
+        run: make test-ui SIMULATOR_NAME="${{ steps.sim.outputs.name }}" UI_TEST_ITERATIONS=2

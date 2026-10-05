@@ -163,15 +163,8 @@ final class ReaderUITests: XCTestCase {
     /// Polls rather than reading `.label` once — see the doc comment on
     /// `testTapZonesPageAndToggleChromeUnderQuarters`.
     @MainActor
-    private func waitForPageLabel(_ expected: String, timeout: TimeInterval = 3) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if app.find(AID.readerPageLabel).label == expected {
-                return true
-            }
-            usleep(100_000)
-        }
-        return false
+    private func waitForPageLabel(_ expected: String, timeout: TimeInterval = 10) -> Bool {
+        app.waitForLabel(AID.readerPageLabel, timeout: timeout) { $0 == expected } == expected
     }
 
     @MainActor
