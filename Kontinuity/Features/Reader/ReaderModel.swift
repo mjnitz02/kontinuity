@@ -26,6 +26,7 @@ final class ReaderModel {
     private let downloads: DownloadCoordinator
     private let localStore = LocalBookStore()
     private let glassesSettings: GlassesSettings
+    private let readerSettings: ReaderSettings
 
     private(set) var pageSources: [PageSource] = []
     private(set) var spreads: [PageSpread] = []
@@ -42,6 +43,10 @@ final class ReaderModel {
     /// `currentSpreadIndex` from the same resolved start page, since a
     /// continuous scroll has no spread to land on.
     private(set) var initialPageIndex = 0
+    /// Whether the container is wider than it is tall — the only state in
+    /// which the spread/single-page choice means anything.
+    private(set) var isLandscape = false
+    private(set) var landscapeSpreads: Bool
 
     private var localManifest: LocalBookManifest?
     private var remoteManifest: KomgaDivinaManifest?
@@ -61,13 +66,16 @@ final class ReaderModel {
         service: any KomgaServing,
         sync: ProgressionSyncEngine,
         downloads: DownloadCoordinator,
-        glassesSettings: GlassesSettings = GlassesSettings()
+        glassesSettings: GlassesSettings = GlassesSettings(),
+        readerSettings: ReaderSettings = ReaderSettings()
     ) {
         self.book = book
         self.service = service
         self.sync = sync
         self.downloads = downloads
         self.glassesSettings = glassesSettings
+        self.readerSettings = readerSettings
+        landscapeSpreads = readerSettings.landscapeSpreads
     }
 
     var pageCount: Int {
@@ -118,7 +126,20 @@ final class ReaderModel {
     /// preserving the page the reader was looking at rather than resetting to
     /// the start.
     func updateLayout(for containerSize: CGSize) {
-        let newMode: LayoutMode = containerSize.width > containerSize.height ? .spread : .fitPage
+        isLandscape = containerSize.width > containerSize.height
+        applyLayoutMode()
+    }
+
+    /// Persisted, so every book opens the way the reader last chose.
+    func setLandscapeSpreads(_ enabled: Bool) {
+        guard enabled != landscapeSpreads else { return }
+        landscapeSpreads = enabled
+        readerSettings.landscapeSpreads = enabled
+        applyLayoutMode()
+    }
+
+    private func applyLayoutMode() {
+        let newMode: LayoutMode = isLandscape && landscapeSpreads ? .spread : .fitPage
         guard newMode != mode else { return }
         mode = newMode
 

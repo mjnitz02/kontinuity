@@ -2,9 +2,10 @@
 //  ReaderView.swift
 //  Kontinuity
 //
-//  Mode A, the iPad panel. Portrait: one page. Landscape:
-//  two-page spreads, decided off the container's own aspect rather than device
-//  orientation directly, so split-screen/Stage Manager sizing is honoured too.
+//  Mode A, the iPad panel. Portrait: one page. Landscape: two-page spreads or
+//  one page, the reader's choice, decided off the container's own aspect
+//  rather than device orientation directly, so split-screen/Stage Manager
+//  sizing is honoured too.
 //
 
 import KontinuityCore
@@ -266,6 +267,8 @@ struct ReaderView: View {
                     ? nil
                     : "\(model.currentSpreadIndex + 1) / \(model.spreads.count)",
                 flow: model.flow,
+                landscapeSpreads: model.isLandscape ? model.landscapeSpreads : nil,
+                onToggleSpreads: { model.setLandscapeSpreads(!model.landscapeSpreads) },
                 onDone: { dismiss() },
                 onToggleFlow: toggleFlow,
                 onEnterGlasses: enterGlassesMode
