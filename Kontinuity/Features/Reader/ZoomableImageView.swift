@@ -105,6 +105,7 @@ struct ZoomableImageView: UIViewRepresentable {
         /// a zoomed-in page straight back to fit. Only a real size change
         /// (first layout, rotation, Split View) needs a new fit.
         func boundsDidLayout() {
+            guard let scrollView, scrollView.bounds.size != fittedBoundsSize else { return }
             fitToScreen()
         }
 
@@ -130,6 +131,9 @@ struct ZoomableImageView: UIViewRepresentable {
             // the range is opened to admit 1 because `zoomScale` is clamped to
             // it, and the previous fit's maximum is below 1 for any page more
             // than four times the viewport.
+            scrollView.minimumZoomScale = 1
+            scrollView.maximumZoomScale = 1
+            scrollView.zoomScale = 1
             imageView.frame = CGRect(origin: .zero, size: image.size)
             scrollView.contentSize = image.size
 
