@@ -143,6 +143,48 @@ extension SwiftDataTests {
             #expect(settings.flowOverride(forSeries: book.seriesId) == .continuous)
         }
 
+        @Test("single-page landscape shows one page per unit, keeps the reader's page, and persists")
+        func landscapeSinglePage() async throws {
+            let context = try makeContext()
+            let device = KomgaDevice(id: UUID(), name: "Test iPad")
+            let service = RecordingKomgaService()
+            let sync = ProgressionSyncEngine(service: service, modelContext: context, device: device)
+            let downloads = DownloadCoordinator(
+                service: service,
+                modelContext: context,
+                settings: DownloadSettings(),
+                sessionConfiguration: .ephemeral
+            )
+            let settings = try ReaderSettings(
+                defaults: #require(UserDefaults(suiteName: "ReaderModelTests.landscape.\(UUID())"))
+            )
+            let model = ReaderModel(
+                book: Self.book(),
+                service: service,
+                sync: sync,
+                downloads: downloads,
+                readerSettings: settings
+            )
+            await model.load()
+            let landscape = CGSize(width: 1194, height: 834)
+
+            model.updateLayout(for: landscape)
+            #expect(model.spreads.count == 3)
+            model.currentSpreadIndex = 2 // pages 5 and 6
+
+            model.setLandscapeSpreads(false)
+
+            #expect(model.spreads.count == 6)
+            #expect(model.spreads[model.currentSpreadIndex].pageIndices == [4])
+            #expect(settings.landscapeSpreads == false)
+
+            // A rotation away and back keeps the choice rather than
+            // re-deriving spreads from the aspect alone.
+            model.updateLayout(for: CGSize(width: landscape.height, height: landscape.width))
+            model.updateLayout(for: landscape)
+            #expect(model.spreads.count == 6)
+        }
+
         private static func book(pages: Int = 6, readProgress: KomgaReadProgress? = nil) -> KomgaBook {
             KomgaBook(
                 id: "b1",

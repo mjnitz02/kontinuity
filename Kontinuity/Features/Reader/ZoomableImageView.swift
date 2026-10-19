@@ -41,7 +41,7 @@ struct ZoomableImageView: UIViewRepresentable {
         scrollView.addSubview(imageView)
         context.coordinator.imageView = imageView
         context.coordinator.scrollView = scrollView
-        scrollView.onLayout = { [weak coordinator = context.coordinator] in coordinator?.fitToScreen() }
+        scrollView.onLayout = { [weak coordinator = context.coordinator] in coordinator?.boundsDidLayout() }
 
         let doubleTap = UITapGestureRecognizer(
             target: context.coordinator,
@@ -97,6 +97,18 @@ struct ZoomableImageView: UIViewRepresentable {
             center()
         }
 
+        /// The size the current fit was computed against.
+        private var fittedBoundsSize: CGSize = .zero
+
+        /// `UIScrollView` lays itself out on every scroll and zoom step, not
+        /// just when its size changes — refitting on each of those would snap
+        /// a zoomed-in page straight back to fit. Only a real size change
+        /// (first layout, rotation, Split View) needs a new fit.
+        func boundsDidLayout() {
+            guard let scrollView, scrollView.bounds.size != fittedBoundsSize else { return }
+            fitToScreen()
+        }
+
         /// Sizes the image view to the image's native pixel size, then picks a
         /// `minimumZoomScale` that fits it to the current bounds — the actual
         /// "portrait: one page fit-to-screen" behaviour.
@@ -107,7 +119,21 @@ struct ZoomableImageView: UIViewRepresentable {
             guard let scrollView, let imageView, let image = imageView.image else { return }
             let bounds = scrollView.bounds.size
             guard bounds.width > 0, bounds.height > 0 else { return }
+            fittedBoundsSize = bounds
 
+            // Zooming is a scale *transform* on the image view, and assigning
+            // `frame` under a non-identity transform resizes the untransformed
+            // bounds instead — by 1/zoomScale. If the new fit scale then
+            // matches the old one, setting `zoomScale` below is a no-op that
+            // never corrects it, and the page is stuck at native pixel size.
+            // That's the reused-page case: a swipe back hands an already-fit
+            // view a same-size image. Resetting to 1 first clears the transform;
+            // the range is opened to admit 1 because `zoomScale` is clamped to
+            // it, and the previous fit's maximum is below 1 for any page more
+            // than four times the viewport.
+            scrollView.minimumZoomScale = 1
+            scrollView.maximumZoomScale = 1
+            scrollView.zoomScale = 1
             imageView.frame = CGRect(origin: .zero, size: image.size)
             scrollView.contentSize = image.size
 

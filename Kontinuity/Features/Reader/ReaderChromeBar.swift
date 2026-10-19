@@ -15,6 +15,10 @@ struct ReaderChromeBar: View {
     /// Nil while there's nothing to count yet.
     let position: String?
     let flow: BandFlow
+    /// Nil hides the spread/single-page button — portrait, and the continuous
+    /// strip, have no spreads to choose between.
+    var landscapeSpreads: Bool?
+    var onToggleSpreads: () -> Void = {}
     let onDone: () -> Void
     let onToggleFlow: () -> Void
     let onEnterGlasses: () -> Void
@@ -29,6 +33,14 @@ struct ReaderChromeBar: View {
                     .accessibilityIdentifier(AID.readerPageLabel)
             }
             Spacer()
+            if let landscapeSpreads {
+                // A state readout like the flow button beside it.
+                Button(action: onToggleSpreads) {
+                    Image(systemName: landscapeSpreads ? "book.pages" : "rectangle.portrait")
+                }
+                .accessibilityIdentifier(AID.readerSpreadToggle)
+                .accessibilityLabel(landscapeSpreads ? "Two-page spreads" : "Single page")
+            }
             Button(action: onToggleFlow) {
                 Image(systemName: flow.symbolName)
             }

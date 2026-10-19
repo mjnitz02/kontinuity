@@ -168,6 +168,9 @@ public enum AID {
     /// counterpart to `glassesFlowToggle`, reachable without ever entering
     /// glasses mode.
     public static let readerFlowToggle = "reader.flowToggle"
+    /// Landscape's two-page-spread / single-page choice — only present while
+    /// the paging reader is in a landscape container.
+    public static let readerSpreadToggle = "reader.spreadToggle"
 
     // Glasses mode (Mode B)
     public static let readerGlassesModeButton = "reader.glassesModeButton"
